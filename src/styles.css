@@ -194,6 +194,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: 0.78rem;
   font-weight: 600;
 }
+button.chip { border: 1px solid transparent; cursor: pointer; color: var(--text); }
+button.chip:hover { border-color: var(--border); }
+.chip-active { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent) !important; }
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 3px; }

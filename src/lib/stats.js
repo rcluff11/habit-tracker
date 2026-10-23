@@ -1,4 +1,4 @@
-import { addDays, weekday, weekDates } from "./time";
+import { addDays, weekday, weekDates } from "./time.js";
 
 export function blockOccursOn(block, date) {
   if (date < block.date) return false;
@@ -57,7 +57,7 @@ export function instancesForDate({ tasks, blocks, completionIndex }, date, today
     } else if (task.daily) {
       include = date >= (task.date || created);
     } else {
-      const any = completionIndex.byTask.get(task.id)?.[0];
+      const any = completionIndex.byTask.get(task.id)?.at(-1);
       if (any) {
         include = any.date === date;
         completion = include ? any : undefined;

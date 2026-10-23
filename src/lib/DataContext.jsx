@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { pb } from "./pb";
 import { indexCompletions } from "./stats";
 
@@ -19,6 +19,7 @@ export function DataProvider({ user, children }) {
   const [state, setState] = useState({ categories: [], blocks: [], tasks: [], completions: [], rewards: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const seeded = useRef(false);
 
   const reload = useCallback(async () => {
     try {
@@ -26,7 +27,9 @@ export function DataProvider({ user, children }) {
         COLLECTIONS.map((c) => pb.collection(c).getFullList({ sort: "created" }))
       );
       let next = Object.fromEntries(COLLECTIONS.map((c, i) => [c, lists[i]]));
-      if (next.categories.length === 0) {
+      // New accounts get starter categories (guarded: StrictMode runs this effect twice).
+      if (next.categories.length === 0 && !seeded.current) {
+        seeded.current = true;
         next.categories = await Promise.all(
           STARTER_CATEGORIES.map((c) => pb.collection("categories").create({ ...c, user: user.id }))
         );
