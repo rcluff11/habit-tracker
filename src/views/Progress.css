@@ -11,7 +11,7 @@
 .day-column { display: grid; grid-template-rows: 22px 160px auto auto; gap: 6px; min-width: 0; align-items: end; text-align: center; }
 .day-value { color: var(--muted); font-size: .72rem; }
 .bar-track { display: flex; align-items: flex-end; justify-content: center; height: 160px; border-radius: 10px; background: var(--surface-2); overflow: hidden; }
-.bar-track > span { width: 100%; min-height: 3px; background: var(--accent); border-radius: 10px 10px 0 0; transition: height .3s ease; }
+.bar-track > span { width: 100%; min-height: 3px; background: linear-gradient(0deg, var(--sun), var(--accent)); border-radius: 10px 10px 0 0; transition: height .3s ease; }
 .day-column.today .bar-track { outline: 2px solid var(--accent-soft); outline-offset: 3px; }
 .day-column.today .day-label { color: var(--accent-strong); font-weight: 700; }
 .day-label { font-size: .82rem; font-weight: 600; }

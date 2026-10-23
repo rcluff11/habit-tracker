@@ -1,22 +1,29 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap");
 
+/* "Sunrise" theme: warm first light fading into a clear morning sky. */
 :root {
-  --bg: #faf7f2;
+  --bg: #fff8f1;
+  --bg-sky: linear-gradient(180deg, #ffeedd 0%, #fff8f1 35%, #f3f7fd 100%);
   --surface: #ffffff;
-  --surface-2: #f3efe8;
-  --text: #1f1d1a;
-  --muted: #6f6a62;
-  --border: #e7e1d7;
-  --accent: #e8775a;
-  --accent-strong: #d4613f;
-  --accent-soft: #fce9e2;
-  --good: #3fa37a;
-  --good-soft: #e1f3ea;
-  --warn: #d99a21;
-  --danger: #d1495b;
-  --radius: 16px;
-  --radius-sm: 10px;
-  --shadow: 0 1px 2px rgba(31, 29, 26, 0.04), 0 4px 16px rgba(31, 29, 26, 0.06);
+  --surface-2: #fff1e6;
+  --text: #2b2540;
+  --muted: #7a7290;
+  --border: #f2e4d8;
+  --accent: #ee6a45;
+  --accent-strong: #c9502d;
+  --accent-soft: #ffe8dc;
+  --accent-grad: linear-gradient(135deg, #ff9a5a 0%, #ee6a45 55%, #e8566a 100%);
+  --sun: #ffc94d;
+  --sun-soft: #fff4d6;
+  --sky: #7cb8f2;
+  --sky-soft: #e6f1fc;
+  --good: #2fa57c;
+  --good-soft: #def5ea;
+  --warn: #e0a21c;
+  --danger: #d9465e;
+  --radius: 18px;
+  --radius-sm: 12px;
+  --shadow: 0 1px 2px rgba(91, 60, 40, 0.04), 0 6px 20px rgba(238, 106, 69, 0.07);
   --font: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Fraunces", Georgia, serif;
   --nav-h: 64px;
@@ -25,18 +32,22 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171614;
-    --surface: #211f1c;
-    --surface-2: #2b2925;
-    --text: #f2eee8;
-    --muted: #a39d93;
-    --border: #36332e;
-    --accent: #f08a6d;
-    --accent-strong: #f5a189;
-    --accent-soft: #3a2822;
-    --good: #5cc497;
-    --good-soft: #1f3329;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+    /* "Pre-dawn": deep indigo with the first glow on the horizon. */
+    --bg: #1a1726;
+    --bg-sky: linear-gradient(180deg, #1a1726 0%, #1f1a2e 60%, #2a1f30 100%);
+    --surface: #242036;
+    --surface-2: #2f2a44;
+    --text: #f6f0f8;
+    --muted: #a99fc0;
+    --border: #39324f;
+    --accent: #ff8f66;
+    --accent-strong: #ffb08f;
+    --accent-soft: #42293a;
+    --sun-soft: #3a3226;
+    --sky-soft: #232c45;
+    --good: #5cd0a2;
+    --good-soft: #1c3530;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.28);
     color-scheme: dark;
   }
 }
@@ -47,7 +58,7 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--bg) var(--bg-sky) fixed;
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
@@ -79,7 +90,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   gap: 4px;
   padding: 24px 14px;
   border-right: 1px solid var(--border);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(12px);
 }
 
 .nav-brand {
@@ -87,6 +99,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: 1.25rem;
   font-weight: 600;
   padding: 0 10px 18px;
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .nav-item {
@@ -176,8 +192,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: 0.5; cursor: default; }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn-primary {
+  background: var(--accent-grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(238, 106, 69, 0.28);
+}
+.btn-primary:hover { background: var(--accent-grad); filter: brightness(1.05); }
 .btn-ghost { border-color: transparent; background: none; }
 .btn-danger { color: var(--danger); }
 .btn-sm { padding: 5px 11px; font-size: 0.8rem; }
@@ -204,7 +225,7 @@ button.chip:hover { border-color: var(--border); }
 .seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 
 .progress-bar { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
-.progress-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 0.3s ease; }
+.progress-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--sun), var(--accent)); border-radius: inherit; transition: width 0.3s ease; }
 
 /* ---------- Forms ---------- */
 

@@ -35,6 +35,12 @@ function Ring({ percent }) {
   const c = 2 * Math.PI * r;
   return (
     <svg className="ring" viewBox="0 0 100 100" role="img" aria-label={`${percent}% complete`}>
+      <defs>
+        <linearGradient id="ring-sunrise" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#ffc94d" />
+          <stop offset="100%" stopColor="#ee6a45" />
+        </linearGradient>
+      </defs>
       <circle cx="50" cy="50" r={r} className="ring-track" />
       <circle
         cx="50"

@@ -1,5 +1,6 @@
 .affirmation {
-  background: linear-gradient(120deg, var(--accent-soft), var(--surface) 70%);
+  background: linear-gradient(120deg, var(--sun-soft) 0%, var(--accent-soft) 45%, var(--sky-soft) 100%);
+  border-color: transparent;
 }
 .affirmation p {
   font-family: var(--font-display);
@@ -20,7 +21,7 @@
 .ring circle { fill: none; stroke-width: 10; }
 .ring-track { stroke: var(--surface-2); }
 .ring-fill {
-  stroke: var(--accent);
+  stroke: url(#ring-sunrise);
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
