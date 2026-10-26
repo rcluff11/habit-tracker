@@ -54,7 +54,7 @@ function Shell() {
         ))}
       </nav>
       <main className="main">
-        {error && <p className="error">Couldn't reach the server: {error}</p>}
+        {error && <p className="error">Something went wrong talking to the server: {error}</p>}
         {loading ? <p className="muted">Loading…</p> : <Current go={go} />}
       </main>
     </div>
@@ -63,9 +63,27 @@ function Shell() {
 
 export default function App() {
   const [user, setUser] = useState(pb.authStore.record);
+  // A saved login can outlive its account (e.g. after resetting the database),
+  // so confirm it with the server before loading anything.
+  const [checking, setChecking] = useState(pb.authStore.isValid);
 
   useEffect(() => pb.authStore.onChange((_, record) => setUser(record)), []);
 
+  useEffect(() => {
+    if (!pb.authStore.isValid) {
+      pb.authStore.clear();
+      return;
+    }
+    pb.collection("users")
+      .authRefresh()
+      .catch((err) => {
+        // Only log out when the server rejects the login, not when it's unreachable.
+        if (err.status === 401 || err.status === 403 || err.status === 404) pb.authStore.clear();
+      })
+      .finally(() => setChecking(false));
+  }, []);
+
+  if (checking) return <p className="muted" style={{ padding: 24 }}>Loading…</p>;
   if (!user) return <Auth />;
   return (
     <DataProvider user={user} key={user.id}>
