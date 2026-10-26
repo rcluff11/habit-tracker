@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "pb": "cd pocketbase && pocketbase.exe serve"
+    "pb": "cd pocketbase && pocketbase.exe serve",
+    "test:api": "node scripts/api-test.mjs"
   },
   "dependencies": {
     "pocketbase": "^0.28.1",

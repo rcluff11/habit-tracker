@@ -26,10 +26,20 @@ npm run dev
 #    App: http://localhost:5173
 ```
 
-If `pocketbase/pocketbase.exe` is missing, download the Windows build from
-https://github.com/pocketbase/pocketbase/releases (v0.40.x) into `pocketbase/`.
+If `pocketbase/pocketbase.exe` is missing, download the Windows build (v0.41.x) into `pocketbase/`.
+PocketBase releases are moving from GitHub to https://ganigeorgiev.com/pocketbase; older
+versions remain at https://github.com/pocketbase/pocketbase/releases.
 
 The database schema lives in `pocketbase/pb_migrations/` and is applied automatically on start.
+Security rules (ownership checks, server-side points, valid block times) live in `pocketbase/pb_hooks/`.
+**Both folders must sit next to `pocketbase.exe`.** If you add or restore them while PocketBase is
+running, restart it so the hooks load.
+
+To confirm the database is set up correctly (PocketBase must be running):
+
+```powershell
+npm run test:api
+```
 
 ## Deploying
 
