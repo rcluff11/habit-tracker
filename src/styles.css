@@ -317,4 +317,11 @@ button.chip:hover { border-color: var(--border); }
 
 .auth { min-height: 100%; display: grid; place-items: center; padding: 24px; }
 .auth .card { width: min(400px, 100%); padding: 28px; }
-.auth h1 { margin-bottom: 4px; }
+.auth h1.brand {
+  font-size: 2.4rem;
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.auth .tagline { font-weight: 600; font-size: 1.05rem; margin: 2px 0 6px; }

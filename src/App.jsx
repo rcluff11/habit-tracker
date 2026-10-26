@@ -38,7 +38,7 @@ function Shell() {
   return (
     <div className="app">
       <nav className="nav">
-        <div className="nav-brand">Dayline</div>
+        <div className="nav-brand">Notch</div>
         {VIEWS.map((v, i) => (
           <Fragment key={v.id}>
             {i === VIEWS.length - 1 && <div className="nav-spacer" />}

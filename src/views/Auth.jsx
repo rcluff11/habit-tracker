@@ -34,7 +34,8 @@ export default function Auth() {
   return (
     <div className="auth">
       <div className="card">
-        <h1>Dayline</h1>
+        <h1 className="brand">Notch</h1>
+        <p className="tagline">Notch every win.</p>
         <p className="muted" style={{ marginBottom: 20 }}>
           Your calendar, to-dos and habits — with rewards you actually want.
         </p>

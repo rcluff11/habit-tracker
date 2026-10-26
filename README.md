@@ -1,4 +1,8 @@
-# Dayline — habit tracker + calendar
+# Notch
+
+**Notch every win.**
+
+Habit tracker + calendar
 
 A "life operating system": time-blocked calendar, to-do list, daily habits and
 personal rewards in one place. React (Vite) frontend, PocketBase backend,
@@ -46,9 +50,9 @@ npm run test:api
 Netlify only hosts static files, so PocketBase needs its own server:
 
 1. **Host PocketBase** — e.g. [PocketHost](https://pockethost.io) (easiest), Fly.io, Railway, or any small VPS.
-   Upload the `pb_migrations` folder with it so the schema is created.
+   Upload the `pb_migrations` and `pb_hooks` folders with it (schema + security rules).
 2. **Deploy the frontend to Netlify** — connect the repo (build settings come from `netlify.toml`)
-   and add an environment variable `VITE_PB_URL` = your PocketBase URL (e.g. `https://dayline.pockethost.io`).
+   and add an environment variable `VITE_PB_URL` = your PocketBase URL (e.g. `https://notch.pockethost.io`).
    Or from the CLI: `npx netlify-cli deploy --prod` after `npm run build`.
 
 ## Project layout
