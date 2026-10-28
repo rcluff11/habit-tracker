@@ -240,7 +240,10 @@ button.chip:hover { border-color: var(--border); }
 }
 .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 .form { display: flex; flex-direction: column; gap: 14px; }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+/* Let fields shrink to their column; date/time pickers otherwise overflow into their neighbor. */
+.form-row > *, .form-row .input { min-width: 0; }
+@media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .error { color: var(--danger); font-size: 0.85rem; }
