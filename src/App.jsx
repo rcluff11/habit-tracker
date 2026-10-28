@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { pb } from "./lib/pb";
 import { DataProvider, useData } from "./lib/DataContext";
+import { syncPushTimezone } from "./lib/push";
 import Auth from "./views/Auth";
 import Home from "./views/Home";
 import Calendar from "./views/Calendar";
@@ -76,6 +77,11 @@ export default function App() {
     }
     pb.collection("users")
       .authRefresh()
+      // Login confirmed: refresh this device's reminder timezone in case the user has travelled.
+      // Runs in the background so it never delays the app loading.
+      .then(() => {
+        syncPushTimezone().catch(() => {});
+      })
       .catch((err) => {
         // Only log out when the server rejects the login, not when it's unreachable.
         if (err.status === 401 || err.status === 403 || err.status === 404) pb.authStore.clear();

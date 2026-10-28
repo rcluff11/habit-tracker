@@ -83,6 +83,25 @@ try {
   const week = weekStats(data, startOfWeek(today), today);
   week.points === 25 ? pass(`weekly stats (${week.done}/${week.total}, ${week.points} pts)`) : fail(`weekly points = ${week.points}`);
 
+  // Push subscriptions: one per device, endpoint always taken from the subscription.
+  const endpoint = `https://push.example.test/${stamp}`;
+  const subscription = { endpoint, keys: { p256dh: "BTestKey", auth: "testauth" } };
+  const ps = await a.collection("push_subscriptions").create({
+    user: ua, subscription, endpoint: "https://forged.example", timezone: "America/Denver",
+  });
+  ps.endpoint === endpoint ? pass("push endpoint set by the server") : fail(`push endpoint = ${ps.endpoint}`);
+  await expect("push subscription without keys", () =>
+    a.collection("push_subscriptions").create({ user: ua, subscription: { endpoint: `${endpoint}/x` } }), true);
+  await expect("push subscription with non-https endpoint", () =>
+    a.collection("push_subscriptions").create({ user: ua, subscription: { ...subscription, endpoint: "http://x.test/1" } }), true);
+  await expect("claim another account's device", () =>
+    b.collection("push_subscriptions").create({ user: ub, subscription }), true);
+  (await b.collection("push_subscriptions").getFullList()).length === 0
+    ? pass("users can't see each other's devices")
+    : fail("push subscription leak");
+  await expect("update own device timezone", () =>
+    a.collection("push_subscriptions").update(ps.id, { timezone: "America/New_York" }), false);
+
   await a.collection("blocks").delete(block.id);
   const left = await a.collection("tasks").getFullList();
   left.length === 1 && left[0].title === "Stretch" ? pass("deleting a block removes its tasks") : fail("block cascade");

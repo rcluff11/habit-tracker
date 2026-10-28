@@ -42,6 +42,21 @@ function check(e) {
     const task = ownedBy("tasks", record.getString("task"), userId);
     record.set("points", task ? task.getInt("points") : 0);
   }
+
+  // The endpoint (one per device) always comes from the subscription itself.
+  if (name === "push_subscriptions") {
+    let sub;
+    try {
+      sub = JSON.parse(record.getString("subscription"));
+    } catch (_) {
+      sub = null;
+    }
+    const endpoint = sub && typeof sub.endpoint === "string" ? sub.endpoint : "";
+    if (!endpoint.startsWith("https://") || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+      throw new BadRequestError("Invalid push subscription.");
+    }
+    record.set("endpoint", endpoint);
+  }
 }
 
 module.exports = { check };

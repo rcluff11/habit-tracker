@@ -1,8 +1,59 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ColorPicker from "../components/ColorPicker";
 import { pb } from "../lib/pb";
 import { useData } from "../lib/DataContext";
 import { DEFAULT_COLOR, PALETTES, isHex } from "../lib/colors";
+import { disablePush, enablePush, isPushEnabled, pushSupport } from "../lib/push";
+
+function Reminders() {
+  const support = pushSupport();
+  const [enabled, setEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    isPushEnabled().then(setEnabled).catch(() => setEnabled(false));
+  }, []);
+
+  // Browsers only show the permission prompt in response to a tap, so this runs from a button.
+  const toggle = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      if (enabled) {
+        await disablePush();
+        setEnabled(false);
+        setMessage("Reminders are off on this device.");
+      } else {
+        await enablePush();
+        setEnabled(true);
+        setMessage("You're set! You'll get a reminder 10 minutes before each calendar block.");
+      }
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card form">
+      <h2>Reminders</h2>
+      <p className="small muted">
+        Get a notification 10 minutes before each calendar block, even when Notch is closed. Turn this on for each
+        device you want reminders on.
+      </p>
+      {support.supported ? (
+        <button className={`btn ${enabled ? "" : "btn-primary"}`} onClick={toggle} disabled={busy}>
+          {busy ? "One moment…" : enabled ? "Turn off reminders" : "Turn on reminders"}
+        </button>
+      ) : (
+        <p className="small">{support.reason}</p>
+      )}
+      {message && <p className="small" role="status">{message}</p>}
+    </div>
+  );
+}
 
 function CategoryRow({ category }) {
   const { save, remove } = useData();
@@ -68,8 +119,19 @@ export default function Settings() {
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => updateUser({ name })} />
           </label>
           <p className="small muted">Signed in as {user.email}</p>
-          <button className="btn" onClick={() => pb.authStore.clear()}>Log out</button>
+          <button
+            className="btn"
+            onClick={async () => {
+              // Stop this device getting the old account's reminders.
+              await disablePush().catch(() => {});
+              pb.authStore.clear();
+            }}
+          >
+            Log out
+          </button>
         </div>
+
+        <Reminders />
 
         <div className="card form">
           <h2>Color palette</h2>
