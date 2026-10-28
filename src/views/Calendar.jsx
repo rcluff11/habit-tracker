@@ -52,17 +52,17 @@ function DayColumn({ date, isToday, onCreate, onEdit }) {
     if (e.target !== ref.current || e.button !== 0) return;
     const m = minutesAt(e);
     ref.current.setPointerCapture(e.pointerId);
-    setDrag({ anchor: m, start: m, end: m + STEP });
+    setDrag({ anchor: m, start: m, end: m + STEP, y0: e.clientY, moved: false });
   };
   const onPointerMove = (e) => {
     if (!drag) return;
     const m = minutesAt(e);
-    setDrag({ ...drag, start: Math.min(drag.anchor, m), end: Math.max(drag.anchor, m) + STEP });
+    setDrag({ ...drag, start: Math.min(drag.anchor, m), end: Math.max(drag.anchor, m) + STEP, moved: drag.moved || Math.abs(e.clientY - drag.y0) > 4 });
   };
   const onPointerUp = () => {
     if (!drag) return;
     // A plain click creates a one-hour block; a drag uses the dragged range.
-    const end = drag.end - drag.start === STEP ? Math.min(1440, drag.start + 60) : drag.end;
+    const end = drag.moved ? drag.end : Math.min(1440, drag.start + 60);
     onCreate({ date, start: drag.start, end });
     setDrag(null);
   };

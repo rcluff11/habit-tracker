@@ -100,7 +100,7 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
         <div className="form-row">
           <label className="field">
             <span>Start</span>
-            <select className="input" value={form.start} onChange={(e) => set("start", Number(e.target.value))}>
+            <select className="input" value={form.start} onChange={(e) =>{const start = Number(e.target.value); setForm((f) =>({...f, start, end: Math.min(1440, start + (f.end - f.start))}))}}>
               {TIMES.slice(0, -1).map((t) => (
                 <option key={t} value={t}>{formatTime(t)}</option>
               ))}
