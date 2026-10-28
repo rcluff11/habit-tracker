@@ -1,14 +1,44 @@
 # Push reminders
 
-Notch sends a notification 10 minutes before each calendar block, even when the app is closed.
+Notch sends notifications before calendar blocks and at tasks' "remind me at" times, even when the app is closed.
 
 ```
 Phone/browser ──(Turn on reminders)──► PocketBase  push_subscriptions
                                             ▲
-push/sender.mjs (every minute) ─────────────┘ reads blocks + subscriptions,
+push/sender.mjs (every minute) ─────────────┘ reads blocks, tasks, completions, users,
         │                                     works out each user's local time
         └──► Apple / Google / Mozilla push service ──► notification on the device
 ```
+
+## What gets sent
+
+**Blocks.** Each block reminds at a set of times before it starts: at start, 5, 10, 15, 30 or 60 minutes.
+
+| Where | Field | Meaning |
+|---|---|---|
+| Settings → Default block reminders | `users.remindBefore` | e.g. `[10]` (new accounts) |
+| Block editor → Reminders | `blocks.remindBefore` | `null` = use my default, `[]` = none, or e.g. `[60, 10]` |
+
+The notification is the block's name with the real time left and that day's unfinished tasks in the
+block, e.g. **Gym**: "Starts in 10 min · To do: Squats, Protein shake". Other wording: "Starting now",
+"Starts in 1 hour", "Starts in 1 hr 15 min".
+
+**Tasks.** Daily and one-off tasks can have a "Remind me at" time (`tasks.remindAt`, `HH:MM`):
+
+- Daily tasks: every day (from their start date) unless already checked off that day.
+- One-off tasks: on their due date, or on `tasks.remindDate` if they have no due date (blank = today when saved), unless already done.
+- Tasks attached to a block don't get their own reminder; they're listed in the block's reminder.
+
+The notification reads **Don't forget: Stretching**, "Worth 5 points. Tap to check it off."
+
+**Timing rules** (all in [`src/lib/reminders.js`](../src/lib/reminders.js), tested by `npm run test:reminders`):
+
+- Each reminder goes out once per device, item, day and offset.
+- If several of a block's reminder times have already passed (e.g. the sender was down), only the closest one is sent.
+- Nothing arrives late: block reminders expire at the block's start ("Starting now" gets one minute), task
+  reminders 15 minutes after their time. The push `TTL` is set so the push service drops them after that too.
+- Times use each device's timezone, refreshed whenever Notch opens; blocks just after midnight are reminded
+  the evening before.
 
 ## One-time setup
 
@@ -88,6 +118,6 @@ Push works on `http://localhost`, but on a phone it needs the real HTTPS site.
 
 ## Known limitations
 
-- If the sender restarts within 10 minutes of a block, that block's reminder may be sent again. It
+- If the sender restarts shortly before a block or task reminder, that reminder may be sent again. It
   replaces the earlier notification (same tag) rather than stacking a second one.
 - A block starting in the hour skipped when clocks spring forward (e.g. 2:30am) gets no reminder that night.

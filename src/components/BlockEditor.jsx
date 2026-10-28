@@ -4,6 +4,8 @@ import ColorPicker from "./ColorPicker";
 import { useData } from "../lib/DataContext";
 import { DEFAULT_COLOR } from "../lib/colors";
 import { STEP, formatTime } from "../lib/time";
+import { cleanOffsets, describeOffsets, userOffsets } from "../lib/reminders";
+import OffsetPicker from "./OffsetPicker";
 
 const TIMES = Array.from({ length: 1440 / STEP + 1 }, (_, i) => i * STEP);
 
@@ -15,7 +17,7 @@ const RECURRENCE = [
 ];
 
 export default function BlockEditor({ block, defaults = {}, onClose }) {
-  const { categories, categoriesById, tasks, save, remove } = useData();
+  const { user, categories, categoriesById, tasks, save, remove } = useData();
   const [form, setForm] = useState(() => ({
     title: block?.title ?? "",
     date: block?.date ?? defaults.date,
@@ -29,6 +31,13 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
   }));
   const [track, setTrack] = useState({ on: !block, points: 10 });
   const [error, setError] = useState("");
+
+  // Reminders: null = use my default, [] = none, otherwise custom minutes.
+  const defaultOffsets = userOffsets(user);
+  const blockOwn = cleanOffsets(block?.remindBefore);
+  const [remindMode, setRemindMode] = useState(blockOwn === null ? "default" : blockOwn.length ? "custom" : "none");
+  const [customOffsets, setCustomOffsets] = useState(blockOwn?.length ? blockOwn : defaultOffsets);
+  const remindBefore = remindMode === "default" ? null : remindMode === "none" ? [] : customOffsets;
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const linkedTasks = block ? tasks.filter((t) => t.block === block.id) : [];
@@ -45,7 +54,7 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
     try {
       const saved = await save(
         "blocks",
-        { ...form, start: Number(form.start), end: Number(form.end), title: form.title.trim() },
+        { ...form, start: Number(form.start), end: Number(form.end), title: form.title.trim(), remindBefore },
         block?.id
       );
       if (track.on && canTrack) {
@@ -127,6 +136,31 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
             <input className="input" type="date" value={form.recurUntil} onChange={(e) => set("recurUntil", e.target.value)} />
           </label>
         )}
+
+        <div className="field">
+          <span>Reminders</span>
+          <div className="seg" role="group" aria-label="Reminders">
+            {[
+              ["default", "Use my default"],
+              ["none", "None"],
+              ["custom", "Custom"],
+            ].map(([k, label]) => (
+              <button type="button" key={k} className={remindMode === k ? "active" : ""} onClick={() => setRemindMode(k)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {remindMode === "custom" && (
+            <OffsetPicker value={customOffsets} onChange={setCustomOffsets} label="Remind me before this block" />
+          )}
+          <p className="small muted">
+            {remindMode === "default"
+              ? `Your default: ${describeOffsets(defaultOffsets).toLowerCase()}.`
+              : remindMode === "none" || !customOffsets.length
+                ? "No reminders for this block."
+                : `Remind me ${describeOffsets(customOffsets)}.`}
+          </p>
+        </div>
 
         <label className="field">
           <span>Category</span>

@@ -102,9 +102,33 @@ try {
   await expect("update own device timezone", () =>
     a.collection("push_subscriptions").update(ps.id, { timezone: "America/New_York" }), false);
 
+  // Per-item reminders.
+  const me = await a.collection("users").getOne(ua);
+  JSON.stringify(me.remindBefore) === "[10]" ? pass("new users default to 10 min reminders") : fail(`user remindBefore = ${JSON.stringify(me.remindBefore)}`);
+  const u2 = await a.collection("users").update(ua, { remindBefore: [10, 60, 10, 0] });
+  JSON.stringify(u2.remindBefore) === "[60,10,0]" ? pass("user reminders cleaned and sorted") : fail(`user remindBefore = ${JSON.stringify(u2.remindBefore)}`);
+  await expect("user reminder of 7 minutes", () => a.collection("users").update(ua, { remindBefore: [7] }), true);
+  (await a.collection("blocks").getOne(block.id)).remindBefore === null
+    ? pass("block reminders default to null (use my default)")
+    : fail("block remindBefore not null by default");
+  const none = await a.collection("blocks").update(block.id, { remindBefore: [] });
+  JSON.stringify(none.remindBefore) === "[]" ? pass("block reminders can be none ([])") : fail(`block remindBefore = ${JSON.stringify(none.remindBefore)}`);
+  const back = await a.collection("blocks").update(block.id, { remindBefore: null });
+  back.remindBefore === null ? pass("block reminders can go back to default (null)") : fail(`block remindBefore = ${JSON.stringify(back.remindBefore)}`);
+  await expect("block reminder that isn't a list", () => a.collection("blocks").update(block.id, { remindBefore: 10 }), true);
+  await expect("task remind time 25:00", () => a.collection("tasks").create({ user: ua, title: "x", remindAt: "25:00" }), true);
+  const bt = await a.collection("tasks").create({ user: ua, title: "x", block: block.id, remindAt: "08:00", remindDate: today });
+  bt.remindAt === "" && bt.remindDate === "" ? pass("block task reminder fields cleared") : fail("block task kept remindAt/remindDate");
+  const dt = await a.collection("tasks").create({ user: ua, title: "x", daily: true, remindAt: "08:00", remindDate: today });
+  dt.remindAt === "08:00" && dt.remindDate === "" ? pass("daily task keeps time, drops remindDate") : fail("daily task reminder fields wrong");
+  const ot = await a.collection("tasks").create({ user: ua, title: "x", remindAt: "08:00", remindDate: today });
+  ot.remindDate === today ? pass("undated one-off keeps remindDate") : fail("undated one-off lost remindDate");
+
   await a.collection("blocks").delete(block.id);
   const left = await a.collection("tasks").getFullList();
-  left.length === 1 && left[0].title === "Stretch" ? pass("deleting a block removes its tasks") : fail("block cascade");
+  !left.some((t) => t.block === block.id) && left.some((t) => t.title === "Stretch")
+    ? pass("deleting a block removes its tasks (and keeps others)")
+    : fail("block cascade");
 } finally {
   await a.collection("users").delete(ua);
   await b.collection("users").delete(ub);

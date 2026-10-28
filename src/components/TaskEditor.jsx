@@ -21,10 +21,15 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
     block: task?.block ?? defaults.block ?? "",
     date: task?.date ?? defaults.date ?? "",
     priority: task?.priority ?? false,
+    remindAt: task?.remindAt ?? "",
+    remindDate: task?.remindDate ?? "",
   }));
   const [error, setError] = useState("");
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // One-off tasks without a due date need a day to be reminded on.
+  const needsRemindDate = form.kind === "once" && !form.date;
+  const reminderBlock = blocks.find((b) => b.id === form.block);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -40,6 +45,8 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
           block: form.kind === "block" ? form.block : "",
           daily: form.kind === "daily",
           date: form.kind === "block" ? "" : form.kind === "daily" ? form.date || todayISO() : form.date,
+          remindAt: form.kind === "block" ? "" : form.remindAt,
+          remindDate: needsRemindDate && form.remindAt ? form.remindDate || todayISO() : "",
         },
         task?.id
       );
@@ -102,6 +109,43 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
             <span>{form.kind === "daily" ? "Starting" : "Due date (optional)"}</span>
             <input className="input" type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
           </label>
+        )}
+
+        {form.kind === "block" ? (
+          <p className="small muted">
+            🔔 Reminded with {reminderBlock ? <strong>{reminderBlock.title}</strong> : "its calendar block"}.
+          </p>
+        ) : (
+          <div className="form-row">
+            <label className="field">
+              <span>Remind me at (optional)</span>
+              <input
+                className="input"
+                type="time"
+                value={form.remindAt}
+                onChange={(e) => set("remindAt", e.target.value)}
+              />
+            </label>
+            {needsRemindDate && form.remindAt ? (
+              <label className="field">
+                <span>On (blank = today)</span>
+                <input
+                  className="input"
+                  type="date"
+                  value={form.remindDate}
+                  onChange={(e) => set("remindDate", e.target.value)}
+                />
+              </label>
+            ) : (
+              <p className="small muted" style={{ alignSelf: "end" }}>
+                {form.remindAt
+                  ? form.kind === "daily"
+                    ? "Every day, unless it's already done."
+                    : "On the due date, unless it's already done."
+                  : ""}
+              </p>
+            )}
+          </div>
         )}
 
         <div className="form-row">

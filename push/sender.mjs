@@ -1,14 +1,14 @@
-// Sends a push reminder shortly before each calendar block starts.
+// Sends push reminders before calendar blocks and at tasks' "remind me at" times.
 // Runs next to PocketBase (e.g. on the Google Cloud VM). See push/README.md.
 //
 //   node --env-file=push/.env push/sender.mjs          run forever, checking every minute
 //   node --env-file=push/.env push/sender.mjs --test   send a test notification to every device, then exit
 import webpush from "web-push";
 import PocketBase from "pocketbase";
-import { blockOccursOn } from "../src/lib/stats.js";
+import { indexCompletions } from "../src/lib/stats.js";
 import { addDays } from "../src/lib/time.js";
+import { dueReminders } from "../src/lib/reminders.js";
 
-const LEAD_MINUTES = 10;
 const TICK_MS = 60_000;
 const FALLBACK_TZ = "America/Denver";
 
@@ -44,23 +44,20 @@ function localNow(timeZone) {
   return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour) * 60 + Number(p.minute) };
 }
 
-// Upcoming starts within the lead window, including just after midnight.
-function upcoming(blocks, { date, minutes }) {
-  const out = [];
-  for (const [day, offset] of [[date, 0], [addDays(date, 1), 1440]]) {
-    for (const block of blocks) {
-      const startsIn = block.start + offset - minutes;
-      if (startsIn >= 0 && startsIn <= LEAD_MINUTES && blockOccursOn(block, day)) out.push({ block, day, startsIn });
-    }
+function groupBy(list, key) {
+  const map = new Map();
+  for (const item of list) {
+    if (!map.has(item[key])) map.set(item[key], []);
+    map.get(item[key]).push(item);
   }
-  return out;
+  return map;
 }
 
-async function send(sub, payload, topic) {
+async function send(sub, { title, body, url, tag, topic, ttl }) {
   try {
-    // TTL: a reminder is useless once the block has started, so don't deliver it late.
-    await webpush.sendNotification(sub.subscription, JSON.stringify(payload), {
-      TTL: LEAD_MINUTES * 60,
+    // TTL: the push service drops the reminder rather than deliver it late.
+    await webpush.sendNotification(sub.subscription, JSON.stringify({ title, body, url, tag }), {
+      TTL: ttl,
       urgency: "high",
       topic,
     });
@@ -77,36 +74,53 @@ async function send(sub, payload, topic) {
   }
 }
 
-const sent = new Map(); // "subId|blockId|day" -> sent-at ms, so each start is reminded once
+// Completions needed to tell what's done: recent days (blocks, daily tasks) plus any
+// completion of a one-off task that has a reminder (one-offs are done once, any day).
+async function loadCompletions(tasks) {
+  const since = addDays(new Date().toISOString().slice(0, 10), -2);
+  const recent = await pb.collection("completions").getFullList({ filter: pb.filter("date >= {:since}", { since }) });
+  const oneOffIds = tasks.filter((t) => t.remindAt && !t.block && !t.daily).map((t) => t.id);
+  const older = [];
+  for (let i = 0; i < oneOffIds.length; i += 50) {
+    const chunk = oneOffIds.slice(i, i + 50);
+    const params = Object.fromEntries(chunk.map((id, j) => [`t${j}`, id]));
+    const filter = pb.filter(chunk.map((_, j) => `task = {:t${j}}`).join(" || "), params);
+    older.push(...(await pb.collection("completions").getFullList({ filter })));
+  }
+  const byId = new Map([...recent, ...older].map((c) => [c.id, c]));
+  return [...byId.values()];
+}
+
+const sent = new Map(); // "subId|item|id|day|offset" -> sent-at ms, so each reminder goes out once
 
 async function tick() {
   await ensureAuth();
-  const [subs, blocks] = await Promise.all([
-    pb.collection("push_subscriptions").getFullList(),
+  const subs = await pb.collection("push_subscriptions").getFullList();
+  if (!subs.length) return;
+
+  const [users, blocks, tasks] = await Promise.all([
+    pb.collection("users").getFullList({ fields: "id,remindBefore" }),
     pb.collection("blocks").getFullList(),
+    pb.collection("tasks").getFullList(),
   ]);
-  const blocksByUser = new Map();
-  for (const b of blocks) {
-    if (!blocksByUser.has(b.user)) blocksByUser.set(b.user, []);
-    blocksByUser.get(b.user).push(b);
-  }
+  const completions = await loadCompletions(tasks);
+  const usersById = new Map(users.map((u) => [u.id, u]));
+  const blocksByUser = groupBy(blocks, "user");
+  const tasksByUser = groupBy(tasks, "user");
+  const completionsByUser = groupBy(completions, "user");
 
   for (const sub of subs) {
-    const now = localNow(sub.timezone || FALLBACK_TZ);
-    for (const { block, day, startsIn } of upcoming(blocksByUser.get(sub.user) || [], now)) {
-      const key = `${sub.id}|${block.id}|${day}`;
+    const reminders = dueReminders({
+      now: localNow(sub.timezone || FALLBACK_TZ),
+      blocks: blocksByUser.get(sub.user) || [],
+      tasks: tasksByUser.get(sub.user) || [],
+      completionIndex: indexCompletions(completionsByUser.get(sub.user) || []),
+      userDefault: usersById.get(sub.user)?.remindBefore,
+    });
+    for (const reminder of reminders) {
+      const key = `${sub.id}|${reminder.key}`;
       if (sent.has(key)) continue;
-      const ok = await send(
-        sub,
-        {
-          title: block.title,
-          body: startsIn === 0 ? "Starting now" : `Starts in ${startsIn} min`,
-          url: "/#calendar",
-          tag: `block-${block.id}`,
-        },
-        block.id
-      );
-      if (ok) sent.set(key, Date.now());
+      if (await send(sub, reminder)) sent.set(key, Date.now());
     }
   }
 
@@ -120,13 +134,14 @@ if (process.argv.includes("--test")) {
   const subs = await pb.collection("push_subscriptions").getFullList();
   let ok = 0;
   for (const sub of subs) {
-    if (await send(sub, { title: "Notch", body: "Reminders are working. Go notch a win! ✅", url: "/" }, "test")) ok++;
+    const test = { title: "Notch", body: "Reminders are working. Go notch a win! ✅", url: "/", tag: "test", topic: "test", ttl: 3600 };
+    if (await send(sub, test)) ok++;
   }
   console.log(`Sent test notification to ${ok} of ${subs.length} device(s).`);
   process.exit(0);
 }
 
-console.log(`Notch reminder sender running: ${LEAD_MINUTES} min lead, checking every ${TICK_MS / 1000}s.`);
+console.log(`Notch reminder sender running, checking every ${TICK_MS / 1000}s.`);
 // Run ticks back to back (never overlapping), one per minute.
 for (;;) {
   const started = Date.now();

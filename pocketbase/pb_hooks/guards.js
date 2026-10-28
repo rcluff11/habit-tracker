@@ -18,6 +18,27 @@ function ownedBy(collection, id, userId) {
   return rec.get("user") === userId ? rec : null;
 }
 
+// Keep in sync with REMINDER_OPTIONS in src/lib/reminders.js.
+const REMINDER_OPTIONS = [0, 5, 10, 15, 30, 60];
+
+// Validates a remindBefore JSON field. Returns a clean array, or null when unset.
+function cleanRemindBefore(record) {
+  const raw = record.getString("remindBefore");
+  if (raw === "" || raw === "null") return null;
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch (_) {
+    value = undefined;
+  }
+  if (!Array.isArray(value) || value.some((m) => REMINDER_OPTIONS.indexOf(m) === -1)) {
+    throw new BadRequestError("Reminders must be a list of: " + REMINDER_OPTIONS.join(", ") + " minutes.");
+  }
+  const unique = [];
+  for (const m of value) if (unique.indexOf(m) === -1) unique.push(m);
+  return unique.sort((a, b) => b - a);
+}
+
 function check(e) {
   if (e.hasSuperuserAuth()) return;
   const userId = e.auth ? e.auth.id : "";
@@ -35,6 +56,22 @@ function check(e) {
 
   if (name === "blocks" && record.getInt("end") <= record.getInt("start")) {
     throw new BadRequestError("A block must end after it starts.");
+  }
+
+  // Reminder offsets: blocks keep null (= use the user's default); users default to 10 minutes.
+  if (name === "blocks" || name === "users") {
+    const offsets = cleanRemindBefore(record);
+    record.set("remindBefore", offsets === null && name === "users" ? [10] : offsets);
+  }
+
+  // Block tasks are reminded with their block; only one-offs without a due date use remindDate.
+  if (name === "tasks") {
+    if (record.getString("block")) {
+      record.set("remindAt", "");
+      record.set("remindDate", "");
+    } else if (record.getBool("daily") || record.getString("date")) {
+      record.set("remindDate", "");
+    }
   }
 
   // Points earned always come from the task, never from the client.

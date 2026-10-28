@@ -42,7 +42,8 @@ running, restart it so the hooks load.
 To confirm the database is set up correctly (PocketBase must be running):
 
 ```powershell
-npm run test:api
+npm run test:api         # database rules + hooks (PocketBase must be running)
+npm run test:reminders   # reminder timing rules (no server needed)
 ```
 
 ## Deploying

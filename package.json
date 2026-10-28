@@ -10,7 +10,8 @@
     "pb": "cd pocketbase && pocketbase.exe serve",
     "test:api": "node scripts/api-test.mjs",
     "push:sender": "node --env-file=push/.env push/sender.mjs",
-    "push:test": "node --env-file=push/.env push/sender.mjs --test"
+    "push:test": "node --env-file=push/.env push/sender.mjs --test",
+    "test:reminders": "node scripts/reminders-test.mjs"
   },
   "dependencies": {
     "pocketbase": "^0.28.1",

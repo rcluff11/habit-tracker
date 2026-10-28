@@ -4,12 +4,29 @@ import { pb } from "../lib/pb";
 import { useData } from "../lib/DataContext";
 import { DEFAULT_COLOR, PALETTES, isHex } from "../lib/colors";
 import { disablePush, enablePush, isPushEnabled, pushSupport } from "../lib/push";
+import { describeOffsets, userOffsets } from "../lib/reminders";
+import OffsetPicker from "../components/OffsetPicker";
 
 function Reminders() {
+  const { user } = useData();
   const support = pushSupport();
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [defaults, setDefaults] = useState(() => userOffsets(user));
+  const [saveError, setSaveError] = useState("");
+
+  const changeDefaults = async (next) => {
+    const previous = defaults;
+    setDefaults(next);
+    setSaveError("");
+    try {
+      await pb.collection("users").update(user.id, { remindBefore: next });
+    } catch (err) {
+      setDefaults(previous);
+      setSaveError(err.message);
+    }
+  };
 
   useEffect(() => {
     isPushEnabled().then(setEnabled).catch(() => setEnabled(false));
@@ -27,7 +44,7 @@ function Reminders() {
       } else {
         await enablePush();
         setEnabled(true);
-        setMessage("You're set! You'll get a reminder 10 minutes before each calendar block.");
+        setMessage("You're set! Reminders will arrive on this device.");
       }
     } catch (err) {
       setMessage(err.message);
@@ -40,8 +57,8 @@ function Reminders() {
     <div className="card form">
       <h2>Reminders</h2>
       <p className="small muted">
-        Get a notification 10 minutes before each calendar block, even when Notch is closed. Turn this on for each
-        device you want reminders on.
+        Get notifications before calendar blocks and at task reminder times, even when Notch is closed. Turn this on
+        for each device you want reminders on.
       </p>
       {support.supported ? (
         <button className={`btn ${enabled ? "" : "btn-primary"}`} onClick={toggle} disabled={busy}>
@@ -51,6 +68,16 @@ function Reminders() {
         <p className="small">{support.reason}</p>
       )}
       {message && <p className="small" role="status">{message}</p>}
+
+      <div className="field">
+        <span>Default block reminders</span>
+        <OffsetPicker value={defaults} onChange={changeDefaults} label="Default block reminders" />
+        <p className="small muted">
+          {defaults.length ? `Blocks remind you ${describeOffsets(defaults)}.` : "Blocks won't remind you unless you set it on the block."}{" "}
+          You can change this for any block.
+        </p>
+        {saveError && <p className="error">{saveError}</p>}
+      </div>
     </div>
   );
 }
