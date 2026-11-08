@@ -100,7 +100,6 @@ pocketbase/
   pb_hooks/        server-side security rules
 push/           reminder sender (runs on the server) + setup guide
 scripts/        API and reminder tests
-docs/           task briefs used for the Codex collaboration
 ```
 
 ## Roadmap (phase 2)
