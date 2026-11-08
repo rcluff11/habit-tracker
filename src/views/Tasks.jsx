@@ -3,7 +3,7 @@ import TaskItem from "../components/TaskItem";
 import TaskEditor from "../components/TaskEditor";
 import { useData } from "../lib/DataContext";
 import { instancesForDate, summarize } from "../lib/stats";
-import { addDays, formatDate, todayISO } from "../lib/time";
+import { addDays, dayLabel, todayISO } from "../lib/time";
 
 const GROUPS = [
   ["priority", "★ Top priorities", (i) => i.task.priority],
@@ -49,24 +49,25 @@ export default function Tasks() {
           <h1>To-do</h1>
           <p className="page-sub">
             {mode === "day"
-              ? `${date === today ? "Today" : formatDate(date)} · ${stats.done}/${stats.total} done · ${stats.points} pts`
+              ? `${stats.done}/${stats.total} done · ${stats.points} pts`
               : `${tasks.length} tasks`}
           </p>
         </div>
-        <div className="row-wrap">
-          <div className="seg">
-            <button className={mode === "day" ? "active" : ""} onClick={() => setMode("day")}>By day</button>
-            <button className={mode === "all" ? "active" : ""} onClick={() => setMode("all")}>All tasks</button>
-          </div>
-          {mode === "day" && (
-            <div className="row">
-              <button className="btn btn-sm" onClick={() => setDate(addDays(date, -1))} aria-label="Previous day">‹</button>
-              <button className="btn btn-sm" onClick={() => setDate(today)}>Today</button>
-              <button className="btn btn-sm" onClick={() => setDate(addDays(date, 1))} aria-label="Next day">›</button>
-            </div>
-          )}
-          <button className="btn btn-primary" onClick={() => setEditing({ defaults: { category: filter } })}>+ Task</button>
+        <button className="btn btn-primary" style={{ alignSelf: "flex-start" }} onClick={() => setEditing({ defaults: { category: filter } })}>+ Task</button>
+      </div>
+
+      <div className="row-wrap">
+        <div className="seg">
+          <button className={mode === "day" ? "active" : ""} onClick={() => setMode("day")}>By day</button>
+          <button className={mode === "all" ? "active" : ""} onClick={() => setMode("all")}>All tasks</button>
         </div>
+        {mode === "day" && (
+          <div className="row">
+            <button className="btn btn-sm" onClick={() => setDate(addDays(date, -1))} aria-label="Previous day">‹</button>
+            <button className="btn btn-sm" style={{ minWidth: 110 }} onClick={() => setDate(today)} title="Jump to today">{dayLabel(date, today)}</button>
+            <button className="btn btn-sm" onClick={() => setDate(addDays(date, 1))} aria-label="Next day">›</button>
+          </div>
+        )}
       </div>
 
       <div className="row-wrap">

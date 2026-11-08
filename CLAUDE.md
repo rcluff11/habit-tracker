@@ -101,3 +101,10 @@ Run `test:api` after any change to migrations or hooks. Run `test:reminders` aft
 - Energy check-in (high, normal, or low) with task suggestions
 - End-of-day score card
 - Phone and desktop widget for "next 3 hours"
+
+## Reading the codebase
+
+- Don't explore the repo. Use the Layout and Data model above to find files.
+- Read only the files your task names, plus files they import if needed.
+- Find functions with Grep, then read just those lines, not the whole file.
+- Never read node_modules, dist, package-lock.json, or pocketbase/pb_data.

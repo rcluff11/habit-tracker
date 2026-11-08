@@ -4,7 +4,7 @@ import { useData } from "../lib/DataContext";
 import { blocksForDate } from "../lib/stats";
 import { textOn } from "../lib/colors";
 import {
-  STEP, addDays, formatDate, formatRange, formatTime, nowMinutes, startOfWeek, todayISO, weekDates,
+  STEP, addDays, dayLabel, formatDate, formatRange, formatTime, nowMinutes, startOfWeek, todayISO, weekDates, weekLabel,
 } from "../lib/time";
 import "./Calendar.css";
 
@@ -155,22 +155,25 @@ export default function Calendar() {
           <h1>Calendar</h1>
           <p className="page-sub">{title}</p>
         </div>
-        <div className="row-wrap">
-          <div className="seg">
-            {["day", "week"].map((m) => (
-              <button key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>
-                {m === "day" ? "Day" : "Week"}
-              </button>
-            ))}
-          </div>
-          <div className="row">
-            <button className="btn btn-sm" onClick={() => setDate(addDays(date, -step))} aria-label="Previous">‹</button>
-            <button className="btn btn-sm" onClick={() => setDate(today)}>Today</button>
-            <button className="btn btn-sm" onClick={() => setDate(addDays(date, step))} aria-label="Next">›</button>
-          </div>
-          <button className="btn btn-primary" onClick={() => setEditing({ defaults: { date, start: 540, end: 600 } })}>
-            + Block
+        <button className="btn btn-primary" style={{ alignSelf: "flex-start" }} onClick={() => setEditing({ defaults: { date, start: 540, end: 600 } })}>
+          + Block
+        </button>
+      </div>
+
+      <div className="row-wrap">
+        <div className="seg">
+          {["day", "week"].map((m) => (
+            <button key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>
+              {m === "day" ? "Day" : "Week"}
+            </button>
+          ))}
+        </div>
+        <div className="row">
+          <button className="btn btn-sm" onClick={() => setDate(addDays(date, -step))} aria-label="Previous">‹</button>
+          <button className="btn btn-sm" style={{ minWidth: 110 }} onClick={() => setDate(today)} title="Jump to today">
+            {mode === "day" ? dayLabel(date, today) : weekLabel(date, today)}
           </button>
+          <button className="btn btn-sm" onClick={() => setDate(addDays(date, step))} aria-label="Next">›</button>
         </div>
       </div>
 

@@ -59,6 +59,25 @@ export function formatDate(iso, opts = { weekday: "short", month: "short", day: 
   return parseISODate(iso).toLocaleDateString(undefined, opts);
 }
 
+// Short label for date navigation: "Today", "Tomorrow", or "Sat, Nov 7".
+export function dayLabel(iso, today = todayISO()) {
+  if (iso === today) return "Today";
+  if (iso === addDays(today, -1)) return "Yesterday";
+  if (iso === addDays(today, 1)) return "Tomorrow";
+  return formatDate(iso);
+}
+
+// Same for weeks: "This week", "Next week", or "Nov 2 – Nov 8".
+export function weekLabel(iso, today = todayISO()) {
+  const start = startOfWeek(iso);
+  const thisWeek = startOfWeek(today);
+  if (start === thisWeek) return "This week";
+  if (start === addDays(thisWeek, -7)) return "Last week";
+  if (start === addDays(thisWeek, 7)) return "Next week";
+  const opts = { month: "short", day: "numeric" };
+  return `${formatDate(start, opts)} – ${formatDate(addDays(start, 6), opts)}`;
+}
+
 export function snap(minutes) {
   return Math.round(minutes / STEP) * STEP;
 }
