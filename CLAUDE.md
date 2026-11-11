@@ -78,10 +78,11 @@ npm run dev             # frontend at http://localhost:5173
 npm run build
 npm run test:api        # DB rules + hooks (needs PocketBase running)
 npm run test:reminders  # reminder timing (no server)
+npm run test:stats      # scheduling + stats helpers (no server)
 npm run push:test       # send a test push to subscribed devices
 ```
 
-Run `test:api` after any change to migrations or hooks. Run `test:reminders` after any change to `reminders.js` or the sender.
+Run `test:api` after any change to migrations or hooks. Run `test:reminders` after any change to `reminders.js` or the sender. Run `test:stats` after any change to `stats.js` or `time.js`.
 
 ## Working with the agents
 

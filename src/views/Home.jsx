@@ -2,7 +2,7 @@ import { useState } from "react";
 import TaskItem from "../components/TaskItem";
 import TaskEditor from "../components/TaskEditor";
 import { useData } from "../lib/DataContext";
-import { blocksForDate, instancesForDate, summarize, weekStats } from "../lib/stats";
+import { instancesForDate, summarize, topThree, upcomingBlocks, weekStats } from "../lib/stats";
 import { textOn } from "../lib/colors";
 import { formatDate, formatRange, greeting, nowMinutes, startOfWeek, todayISO } from "../lib/time";
 import "./Home.css";
@@ -66,11 +66,9 @@ export default function Home({ go }) {
   const day = summarize(instances, categoriesById);
   const week = weekStats(data, startOfWeek(today), today);
 
-  const priorities = instances.filter((i) => i.task.priority);
-  const top3 = (priorities.length ? priorities : [...instances].sort((a, b) => (b.task.points || 0) - (a.task.points || 0)))
-    .slice(0, 3);
+  const top3 = topThree(instances);
 
-  const upcoming = blocksForDate(data.blocks, today).filter((b) => b.end > now && b.start < now + 180);
+  const upcoming = upcomingBlocks(data.blocks, today, now);
 
   const nextReward = rewards
     .filter((r) => !(r.claimedWeeks || []).includes(week.weekStart))
@@ -115,20 +113,23 @@ export default function Home({ go }) {
         <div className="card">
           <div className="card-head">
             <h2>Next 3 hours</h2>
-            <button className="btn btn-ghost btn-sm" onClick={() => go("calendar")}>Calendar →</button>
+            <div className="card-actions">
+              <button className="btn btn-ghost btn-sm" aria-label="Open Next 3 hours" onClick={() => go("now")}>Open →</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => go("calendar")}>Calendar →</button>
+            </div>
           </div>
           {upcoming.length ? (
             <ul className="upcoming">
-              {upcoming.map((b) => {
-                const live = b.start <= now;
+              {upcoming.map(({ block: b, date, live }) => {
                 return (
-                  <li key={b.id} className={live ? "live" : ""}>
+                  <li key={`${b.id}|${date}`} className={live ? "live" : ""}>
                     <span className="upcoming-bar" style={{ background: b.color, color: textOn(b.color) }} />
                     <div>
                       <div className="task-title">{b.title}</div>
                       <div className="task-meta">
                         {formatRange(b.start, b.end)}
                         {live && <span className="chip live-chip">Now</span>}
+                        {date !== today && <span className="chip tomorrow-chip">Tomorrow</span>}
                       </div>
                     </div>
                   </li>

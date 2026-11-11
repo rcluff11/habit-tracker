@@ -1,0 +1,9 @@
+.now-blocks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.now-block { display: flex; gap: 12px; align-items: stretch; }
+.now-block-body { flex: 1; min-width: 0; }
+.now-block .task-list { margin-top: 8px; }
+.now-block.live .now-head h3 { font-weight: 700; }
+.now-bar { width: 6px; border-radius: 3px; flex: none; }
+.now-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.now-head h3 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.now-time { font-size: 0.8rem; color: var(--muted); }

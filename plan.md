@@ -1,8 +1,8 @@
 # Notch — Plan (Phase 2)
 
 ## Where we left off
-- **Last done:** To-do/Calendar header fix, committed. It added `dayLabel` and `weekLabel` to `src/lib/time.js`.
-- **Next:** run plan-supervisor on this plan, then build F-1.
+- **Last done:** Feature 1 (F-1 to F-4, T-1), committed. It added `upcomingBlocks` and `topThree` to `stats.js`, the `#now` view, the app shortcut, and `npm run test:stats`. TaskItem now shows an inline error when a toggle fails.
+- **Next:** build B-1 (Feature 2, score card).
 - **Watch out:** `time.js` already has `dayLabel` and `weekLabel`, so F-15's month helpers go next to them; don't duplicate them. Every stepped item's start and end must come from `activeWindow()` (F-15), never from `task.date` or `block.date` directly.
 
 ## 1. Overview
@@ -41,6 +41,7 @@ Each one builds on the existing data model and shared libraries rather than addi
   - `stop` **never deletes records**. Deleting tasks would cascade-delete their completions and rewrite past weeks' points. Instead, the shared rule `activeWindow()` gives every stepped task and block an end date, and after it they aren't shown, counted or reminded.
   - To actually remove the records, the course editor has a manual **"Delete these habits"** action. It warns that completions and past points will be deleted too.
 - D-15 **Calendar blocks can belong to a course week** through `blocks.step`. A stepped block starts on its step's derived start date, stops with the course when `onEnd` is `stop`, and the tasks on that block follow it.
+- D-16 **A one-off to-do counts on the day it's completed, not its due date.** If it's finished early or late, it moves to its completion day, and its points go toward that day's total. This is the current `instancesForDate` behaviour, and `scripts/stats-test.mjs` pins it. Don't "fix" it.
 
 ### Assumptions (the plan uses these until the user says otherwise)
 - A-1: There is still one user per account, and no sharing between users.
@@ -157,7 +158,8 @@ Habit Tracker/
 │   │   ├── DataContext.jsx                   # + checkins, plans, plan_targets, courses, course_steps; exposes `schedule`
 │   │   ├── stats.js                          # + upcomingBlocks, dayScore, habitStreak, ENERGY_LEVELS, EFFORT_LEVELS,
 │   │   │                                     #   suggestForEnergy, scheduleIndex, courseEndDate, activeWindow,
-│   │   │                                     #   courseStats, monthStats, targetProgress; blockOccursOn takes schedule
+│   │   │                                     #   courseStats, courseDeleteImpact, monthStats, targetProgress;
+│   │   │                                     #   blockOccursOn takes schedule
 │   │   ├── reminders.js                      # + DEFAULT_DAY_END, dayEndMinutes, NUDGE_PRESETS, NUDGE_STEP,
 │   │   │                                     #   MAX_NUDGES, cleanNudgeTimes, dueDailyMessages; uses activeWindow
 │   │   ├── messages.js                       # NEW: scoreHeadline, closingLine, nudgeText, CELEBRATIONS, TOMORROW_LINES
@@ -293,15 +295,16 @@ All calls go through the PocketBase SDK (`pb.collection(name)`) with the standar
 - `activeWindow(record, schedule)` → `{ start, end | null }` for a task or block (see §4)
 - `blockOccursOn(block, date, schedule)` and `blocksForDate(blocks, date, schedule)`. `schedule` is optional only so phase 1 callers keep working until F-21; every caller must pass it once Feature 5 ships.
 - `instancesForDate(data, date, today)`: reads `data.schedule`. Tasks on a block inherit the block's window. Daily tasks use their own `activeWindow`.
-- `upcomingBlocks(blocks, today, nowMinutes, windowMinutes = 180, schedule)` → `[{ block, date, start, end, live }]`. `start` and `end` are relative to today's midnight, so tomorrow's blocks get +1440.
+- `upcomingBlocks(blocks, today, nowMinutes, schedule, windowMinutes = 180)` → `[{ block, date, start, end, live }]`. `start` and `end` are relative to today's midnight, so tomorrow's blocks get +1440.
 - `habitStreak(data, task, date, today)` → integer. Applies to daily and block tasks only; one-offs return 0.
 - `dayScore(data, date, today)` → `{ date, total, done, percent, points, possiblePoints, bestCategory, complete, streaks: [{ task, count, keptToday, broken }], weekAvgPercent, energy }`
 - `suggestForEnergy(instances, energy, limit = 3)` → instances
 - `courseStats(data, course, today)` → `{ currentWeek, endDate, onEnd, ended, weeks: [{ week, step, startDate, percent }] }`
+- `courseDeleteImpact(data, course)` → `{ tasks, blocks, blockTasks, completions }` (counts of what "Delete these habits" would remove: stepped tasks, stepped blocks, the tasks on those blocks, and all their completions)
 - `monthStats(data, month, today)` → summary for the month (same fields as `summarize`)
 - `targetProgress(data, target, plan, today)` → `{ current, target, percent, reached }`
 - `cleanNudgeTimes(value)` → sorted array, or `null` if invalid; `nudgeTimesFor(user)` → array
-- `dueReminders({ now, blocks, tasks, completionIndex, userDefault, schedule })` (gains `schedule`) and `dueDailyMessages({ now, user, data })` → `[{ key, title, body, url, tag, topic, ttl }]`
+- `dueReminders({ now, blocks, tasks, completionIndex, userDefault, schedule })` (gains `schedule`) and `dueDailyMessages({ now, user, data })` (reads `data.schedule`, like `instancesForDate`) → `[{ key, title, body, url, tag, topic, ttl }]`
 - `affirmationFor(date)`, `nudgeText(summary, nextInstance)`, `closingLine(summary, date)`, `scoreHeadline(summary)` → strings
 
 ## 8. Task Breakdown
@@ -314,7 +317,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
 **Model guide:** `sonnet` is for well-specified UI, migrations and content tasks. `opus` is for shared scheduling or timing rules, sender changes, hooks with cross-collection checks, and reviews of those.
 
 ### Shared groundwork
-- [ ] F-1 · Model: sonnet · Stats test harness
+- [x] F-1 · Model: sonnet · Stats test harness
   Files: scripts/stats-test.mjs, package.json
   Add `scripts/stats-test.mjs` (same style as `reminders-test.mjs`, pure, no server) and the `"test:stats"` script. Cover the existing `blockOccursOn`, `instancesForDate` and `summarize` first.
   Depends on: — · Covers: NFR-3
@@ -322,19 +325,19 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   Tests: `npm run test:stats`
 
 ### Feature 1: Next 3 hours
-- [ ] F-2 · Model: opus · upcomingBlocks helper (crosses midnight)
+- [x] F-2 · Model: opus · upcomingBlocks helper (crosses midnight)
   Files: src/lib/stats.js, src/views/Home.jsx, scripts/stats-test.mjs
-  Move the inline "next 3 hours" filter in `Home.jsx` into `stats.js upcomingBlocks()`. Include tomorrow's blocks that start before `now + window`, reusing the approach in `dueReminders`. Accept the optional `schedule` argument now so F-21 only has to pass it. Home uses it.
+  Move the inline "next 3 hours" filter in `Home.jsx` into `stats.js upcomingBlocks()`. Include tomorrow's blocks that start before `now + window`, reusing the approach in `dueReminders`. Use the §7 signature `upcomingBlocks(blocks, today, nowMinutes, schedule, windowMinutes = 180)`; `schedule` is optional now (callers pass `undefined` until F-21), so F-21 only has to pass it. Home uses it.
   Depends on: F-1 · Covers: FR-1
   Accepts: Home looks the same. At 11:30 PM a 12:15 AM block appears. Live blocks are flagged.
   Tests: `npm run test:stats`
-- [ ] F-3 · Model: sonnet · Now view at #now
+- [x] F-3 · Model: sonnet · Now view at #now
   Files: src/views/Now.jsx, src/views/Now.css, src/App.jsx, src/views/Home.jsx
   The view lists upcoming blocks with their open tasks for that date (checkable through `TaskItem`/`toggleTask`) and today's top 3, and refreshes every minute. `App.jsx` supports routes that aren't nav tabs (`hidden: true` in `VIEWS`), and Home's "Next 3 hours" card links to it.
-  Depends on: F-2 · Covers: FR-1
+  Depends on: F-2 · Covers: FR-1, NFR-5, NFR-6
   Accepts: works at 360px and in dark mode. No nav tab is highlighted. Checking a task updates Home.
   Tests: `npm run build`, then a manual check at mobile width
-- [ ] F-4 · Model: sonnet · App shortcut to #now
+- [x] F-4 · Model: sonnet · App shortcut to #now
   Files: public/manifest.webmanifest, public/shortcut-now-96.png, src/views/Settings.jsx
   Add a manifest `shortcuts` entry for "Next 3 hours" → `/#now`, and a "Quick access" help line in Settings covering long-press on Android, right-click on desktop, and the fact that iOS doesn't support it.
   Depends on: F-3 · Covers: FR-2
@@ -357,7 +360,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
 - [ ] F-6 · Model: sonnet · End-of-day score card
   Files: src/lib/stats.js (dayScore, habitStreak, alongside weekStats), src/lib/messages.js, src/lib/reminders.js, scripts/stats-test.mjs
   The score card's derived data and wording:
-  - **`stats.js`:** add `habitStreak()` (A-6; uses `completionIndex.byTask`, looks back at most 400 days, and reads windows through `activeWindow` once F-15 exists) and `dayScore()`.
+  - **`stats.js`:** add the **phase 1 version** of `habitStreak()` (A-6; uses `completionIndex.byTask`, looks back at most 400 days, and uses today's scheduling rules: `blockOccursOn` for block tasks and `task.date || created` as a daily habit's start) and `dayScore()`. F-15 later switches `habitStreak` to `activeWindow`; F-6 doesn't reference it.
   - **`messages.js` (new):** `scoreHeadline(summary)`; `closingLine(summary, date)`, which is a celebration if the day is complete and a "you'll get it tomorrow" line if not; and `CELEBRATIONS` and `TOMORROW_LINES`, about 20 each, picked per date like affirmations.
   - **`reminders.js`:** add `DEFAULT_DAY_END = "21:00"` and `dayEndMinutes(user)`.
 
@@ -367,7 +370,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
 - [ ] F-7 · Model: sonnet · ScoreCard component, Progress day modal, streak chip
   Files: src/components/ScoreCard.jsx, src/components/ScoreCard.css, src/views/Home.jsx, src/views/Progress.jsx, src/components/TaskItem.jsx
   Add `ScoreCard` with a prop `date`. Home shows today's card when `nowMinutes() >= dayEndMinutes(user)` or the day is complete, with a dismiss button (remembered per date in `localStorage`). In Progress, tapping a day column (a button) opens that day's card in `Modal`. `TaskItem` shows a `chip` with "🔥 N" for habits with a streak of 2 or more.
-  Depends on: F-6 · Covers: FR-3, FR-4, FR-6
+  Depends on: F-6 · Covers: FR-3, FR-4, FR-6, NFR-5, NFR-6
   Accepts: nothing new is stored. Past cards use the snapshotted `completions.points`. Works with a keyboard and in dark mode.
   Tests: `npm run build`, `npm run test:stats`
 - [ ] F-8 · Model: sonnet · Settings: Day ends at
@@ -386,17 +389,19 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   Tests: restart PocketBase, then `npm run test:api`
 - [ ] F-9 · Model: sonnet · Energy data and suggestForEnergy
   Files: src/lib/DataContext.jsx, src/lib/stats.js, scripts/stats-test.mjs
-  Add `checkins` to `COLLECTIONS` and the initial state. In `stats.js` add `ENERGY_LEVELS`, `EFFORT_LEVELS` (synced with the selects) and `suggestForEnergy(instances, energy)`, which only considers open instances. Block tasks are included only while their block is live or upcoming today. Untagged tasks are treated by points: ≤ 10 is light, ≥ 50 is heavy, otherwise medium.
+  Add `checkins` to `COLLECTIONS` and the initial state. In `stats.js` add `ENERGY_LEVELS`, `EFFORT_LEVELS` (synced with the selects) and `suggestForEnergy(instances, energy)`, which only considers open instances. Block tasks are included only while their block is live or upcoming today, decided with `upcomingBlocks` (F-2). Untagged tasks are treated by points: ≤ 10 is light, ≥ 50 is heavy, otherwise medium.
   - **low:** light first, then medium. Heavy is excluded. Priority wins ties.
   - **normal:** priority first, then medium and light before heavy.
   - **high:** heavy first, then the most points, including overdue one-offs.
 
-  Depends on: B-2, F-1 · Covers: FR-9
+  Depends on: B-2, F-1, F-2 · Covers: FR-9
+  Accepts: stats tests cover each energy level's ordering, heavy excluded on low, untagged tasks bucketed by points (10 → light, 50 → heavy), done tasks and blocks that already ended excluded, and at most 3 results. `ENERGY_LEVELS` and `EFFORT_LEVELS` match the B-2 selects. No browser globals in `stats.js`.
   Tests: `npm run test:stats`
 - [ ] F-10 · Model: sonnet · Effort tag in TaskEditor and TaskItem
   Files: src/components/TaskEditor.jsx, src/components/TaskItem.jsx
   Add an optional effort `seg` (None / Light / Medium / Heavy, `aria-pressed`) to the editor, and show a small effort chip on the task row when one is set.
   Depends on: B-2 · Covers: FR-8
+  Accepts: effort saves, changes and clears back to None (empty). Editing an untagged task without touching effort leaves it untagged. The chip is readable in dark mode and the row doesn't wrap badly at 360px.
   Tests: `npm run build`
 - [ ] F-11 · Model: sonnet · EnergyCheckin on Home
   Files: src/components/EnergyCheckin.jsx, src/views/Home.jsx, src/views/Home.css, src/components/ScoreCard.jsx
@@ -414,7 +419,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   Tests: restart PocketBase, then `npm run test:api`
 - [ ] F-12 · Model: opus · dueDailyMessages timing rules
   Files: src/lib/reminders.js, src/lib/messages.js, scripts/reminders-test.mjs
-  In `reminders.js` add `NUDGE_STEP`, `MAX_NUDGES`, `NUDGE_PRESETS = { light: [1080], regular: [720, 1080], frequent: [600, 840, 1080] }`, `cleanNudgeTimes`, `nudgeTimesFor(user)` and `dueDailyMessages({ now, user, data })`. That function is pure and returns at most:
+  In `reminders.js` add `NUDGE_STEP`, `MAX_NUDGES`, `NUDGE_PRESETS = { light: [1080], regular: [720, 1080], frequent: [600, 840, 1080] }`, `cleanNudgeTimes`, `nudgeTimesFor(user)` and `dueDailyMessages({ now, user, data })`. `data` is the same shape `instancesForDate` takes, including `data.schedule` (passed in by the caller; an empty or missing schedule means "no courses" until F-15/B-8). The function builds today's summary only through `instancesForDate(data, …)`, so F-15 can make it window-aware without changing its signature. It is pure and returns at most:
   - `affirmation|DATE` at `affirmationAt`, with text from `affirmationFor(now.date)`.
   - `nudge|DATE|SLOT` for each time in `nudgeTimes` before `dayEndMinutes(user)`, when the day has tasks and isn't complete. Body: `nudgeText(summary, next open priority)`, which is encouraging and never guilt-tripping.
   - `nudge-done|DATE` at the first nudge time reached once the day is complete: a celebration, sent once. Later times that day are skipped.
@@ -422,7 +427,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
 
   Each message uses the `TASK_GRACE_MINUTES` window, clamped at midnight, with a TTL equal to the time left in it. Add `nudgeText` to `messages.js`.
   Depends on: F-5, F-6, B-3 (field names) · Covers: FR-10, FR-11, FR-12, FR-13, NFR-4
-  Accepts: `reminders-test.mjs` covers the windows, custom times, presets, the celebration sent once, the "tomorrow" closing line, days with no tasks, nothing after day end, and the affirmation matching `affirmationFor`.
+  Accepts: `reminders-test.mjs` covers the windows, custom times, presets, the celebration sent once, the "tomorrow" closing line, days with no tasks, nothing after day end, and the affirmation matching `affirmationFor`. `reminders.js`, `messages.js` and `affirmations.js` import nothing browser-only or Vite-only (no `window`, `localStorage`, `import.meta.env`, `pb.js` or JSX) (NFR-3).
   Tests: `npm run test:reminders`, `npm run test:stats`
 - [ ] B-4 · Model: opus · Sender: daily messages + completion loading fix
   Files: push/sender.mjs, push/README.md
@@ -449,11 +454,13 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   Files: src/lib/reminders.js, src/lib/messages.js, scripts/reminders-test.mjs
   `dueDailyMessages` and `nudgeText` accept today's `energy` and use gentler lines on low-energy days.
   Depends on: B-2, F-12 · Covers: FR-11
+  Accepts: reminders tests show low energy picks from the gentler lines, high/normal/missing energy keep the F-12 wording, and leaving `energy` out doesn't change any existing F-12 test result.
   Tests: `npm run test:reminders`
 - [ ] B-5 · Model: opus · (Optional) Sender loads today's check-ins
   Files: push/sender.mjs
   Load today's `checkins` (one query, grouped by user) and pass `energy` into `dueDailyMessages`.
   Depends on: B-4, F-14 · Covers: FR-11
+  Accepts: exactly one extra query per tick, filtered to today's local dates (not per user). Users without a check-in get the normal wording. `npm run push:test` still works.
   Tests: `npm run test:reminders`
 
 ### Feature 5: Monthly plans, targets and courses
@@ -461,6 +468,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   Files: pocketbase/pb_migrations/1794500000_plans_courses.js
   Create `plans`, `plan_targets`, `courses` (with `onEnd` select `keep|stop`) and `course_steps` with owner rules and unique indexes. Add `tasks.step`, `tasks.recurUntil` and `blocks.step` (cascadeDelete false). The down function removes `blocks.step`, `tasks.recurUntil` and `tasks.step`, then deletes `course_steps`, `courses`, `plan_targets` and `plans` in that order. No end-date field is added to `courses`, because the end is derived (D-14).
   Depends on: — · Covers: FR-15, FR-16, FR-17, FR-22, NFR-1
+  Accepts: PocketBase starts cleanly with the migration applied, and the down function rolls it back without errors. api-test shows each new collection has the owner rules (the intruder can't list, view, update or delete), a bad `month`, `week: 0`/`53`/`1.5`, `onEnd: "pause"` and a bad `recurUntil` are rejected, and duplicate `(user, month)` and `(course, week)` are rejected. Existing tasks and blocks are unchanged.
   Tests: restart PocketBase, then `npm run test:api`
 - [ ] B-7 · Model: opus · Hooks: course, step, target rules + delete date-stamping
   Files: pocketbase/pb_hooks/guards.js, pocketbase/pb_hooks/main.pb.js, scripts/api-test.mjs
@@ -477,7 +485,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
     - `courses` delete: write dates for every linked task and block of every step of the course.
     - `course_steps` delete on its own: write dates for that step's linked tasks and blocks. Skip records already unlinked.
     - For each linked **task:** set `date` to the step's start date, and if `onEnd` is `stop`, set `recurUntil` to the course's end date.
-    - For each linked **block:** set `date` to the first date on or after the step's start that keeps a weekly block's weekday. If `onEnd` is `stop`, set `recurUntil` to the earlier of its existing value and the course's end date.
+    - For each linked **block:** set `date` by recurrence. **Daily and weekday blocks:** `date` is the step's start date. **Weekly blocks only:** `date` is the first date on or after the step's start that keeps the block's weekday (from its current `date` anchor). If `onEnd` is `stop`, set `recurUntil` to the earlier of its existing value and the course's end date.
 
   Depends on: B-6 · Covers: FR-16, FR-18, FR-20, FR-22, NFR-1, NFR-2, NFR-8
   Accepts: api-test checks that:
@@ -487,22 +495,22 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   - a percent target of 150 and a completions target with no task are rejected
   - deleting a `keep` course leaves its habits with the correct start date and no end
   - deleting a `stop` course leaves them with the correct start and end dates
-  - a weekly stepped block keeps its weekday after unlinking
+  - a weekly stepped block keeps its weekday after unlinking, and a daily or weekday stepped block gets the step's start date
   - duplicate weeks and months are rejected
   Tests: `npm run test:api`
   Risk: confirm that a course's delete hook runs before the cascade to its steps. If the order differs, write the dates from the step hook using a course end computed before the cascade.
 - [ ] F-15 · Model: opus · Shared course window rule (activeWindow)
   Files: src/lib/stats.js, src/lib/time.js, src/lib/reminders.js, scripts/stats-test.mjs, scripts/reminders-test.mjs
-  - **`stats.js`:** add `scheduleIndex`, `courseEndDate`, `activeWindow` (§4), `courseStats`, `monthStats` and `targetProgress`. `blockOccursOn(block, date, schedule)` checks the block's window. For stepped blocks the start comes from the step, and `block.date` is only the weekday anchor. `instancesForDate` uses `data.schedule`: block tasks follow their block, and daily tasks use their own window, which also covers unstepped `tasks.recurUntil`. `habitStreak` and `upcomingBlocks` use the same rule.
+  - **`stats.js`:** add `scheduleIndex`, `courseEndDate`, `activeWindow` (§4), `courseStats`, `courseDeleteImpact`, `monthStats` and `targetProgress`. `courseDeleteImpact(data, course)` (§7) counts, without changing anything, the course's stepped tasks, stepped blocks, the tasks on those blocks, and all their completions, for F-18's warning. `blockOccursOn(block, date, schedule)` checks the block's window. For stepped blocks the start comes from the step, and `block.date` is only the weekday anchor. `instancesForDate` uses `data.schedule`: block tasks follow their block, and daily tasks use their own window, which also covers unstepped `tasks.recurUntil`. `habitStreak` and `upcomingBlocks` use the same rule.
   - **`targetProgress`:**
     - points: the sum of `completions.points` dated in the month, filtered to the category's tasks if a category is set
     - percent: `monthStats.percent`
     - completions: the number of completions of that task dated in the month
   - **`time.js`:** add `monthDates` and `monthOf`, next to the existing `dayLabel` and `weekLabel`.
-  - **`reminders.js`:** `dueReminders` takes `schedule` and uses `activeWindow` for daily tasks and `blockOccursOn(…, schedule)` for blocks, so stepped items aren't reminded before their week or after a stopped course ends.
+  - **`reminders.js`:** `dueReminders` takes `schedule` and uses `activeWindow` for daily tasks and `blockOccursOn(…, schedule)` for blocks, so stepped items aren't reminded before their week or after a stopped course ends. `dueDailyMessages` keeps its F-12 signature and goes through `activeWindow` via `instancesForDate(data, …)` with `data.schedule`, so daily messages (nudge counts, `nudge-done`, the day-end headline and "has tasks" check) skip stepped habits and blocks outside their window.
 
-  Depends on: B-6, F-1 · Covers: FR-16, FR-18, FR-19, FR-22, NFR-8
-  Accepts: tests cover a Week 2 habit hidden in Week 1 and shown in Week 2, a `stop` course's habit hidden the day after the end and still counted on past days, a `keep` course's habit running past the end, a stepped weekly block on the right weekday from its step start, a task on a stepped block following the block, removing the last step moving the end earlier, and no reminders outside the window.
+  Depends on: B-6, F-1, F-12 · Covers: FR-16, FR-18, FR-19, FR-21, FR-22, NFR-3, NFR-8
+  Accepts: tests cover a Week 2 habit hidden in Week 1 and shown in Week 2, a `stop` course's habit hidden the day after the end and still counted on past days, a `keep` course's habit running past the end, a stepped weekly block on the right weekday from its step start, a task on a stepped block following the block, removing the last step moving the end earlier, no reminders outside the window, `courseDeleteImpact` counts for a course with habits, a block with tasks and completions, and **no daily messages counting a stepped habit outside its window** (a day whose only task is a Week 2 habit gets no nudge or day-end push in Week 1). `stats.js`, `time.js` and `reminders.js` import nothing browser-only or Vite-only (NFR-3).
   Tests: `npm run test:stats`, `npm run test:reminders`
 - [ ] B-8 · Model: opus · Sender: course schedule
   Files: push/sender.mjs, push/README.md
@@ -512,26 +520,27 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   Tests: `npm run test:reminders`
 - [ ] F-16 · Model: sonnet · DataContext + Progress Month mode + MonthPlan
   Files: src/lib/DataContext.jsx, src/views/Progress.jsx, src/views/Progress.css, src/components/MonthPlan.jsx, src/components/MonthPlan.css
-  - **DataContext:** add `plans`, `plan_targets`, `courses` and `course_steps`, and expose a memoized `schedule = scheduleIndex(courses, course_steps)` in the context value. Add `plans`, `courses` and `course_steps` to the reload-on-delete list, because those deletes cascade and the hooks write dates.
+  - **DataContext:** add `plans`, `plan_targets`, `courses` and `course_steps`, and expose a memoized `schedule = scheduleIndex(courses, course_steps)` in the context value. Add `plans`, `plan_targets`, `courses` and `course_steps` to the reload-on-delete list, because those deletes cascade (a plan removes its targets; a task removes its count targets) and the hooks write dates.
   - **Progress:** add a Week/Month `seg` switch; Week mode is unchanged. Month mode has a month switcher and renders `MonthPlan`: an inline editor for the intention and notes (creating or updating that month's plan), `monthStats` with a `progress-bar`, and the targets with `targetProgress` bars.
 
-  Depends on: F-15, B-7 · Covers: FR-15, FR-16
+  Depends on: F-15, B-7 · Covers: FR-15, FR-16, NFR-5, NFR-6
   Accepts: no new nav tab. Works at 360px and in dark mode.
   Tests: `npm run build`, `npm run test:stats`
 - [ ] F-17 · Model: sonnet · TargetEditor
   Files: src/components/TargetEditor.jsx, src/components/MonthPlan.jsx
   A `Modal` styled like the reward editor. It edits the title, kind (`seg`: Points / % complete / Habit count), target, the category (points only) and the habit picker (completions only, daily habits and block tasks). It creates the month's plan first if none exists.
   Depends on: F-16 · Covers: FR-16
+  Accepts: switching kind hides fields that don't apply, and the saved record matches the server's cleared fields. Server errors ("A habit target needs a habit.", "A % target must be 1–100.") are shown. Adding a target to a month with no plan creates exactly one plan. Works at 360px and in dark mode.
   Tests: `npm run build`
 - [ ] F-18 · Model: sonnet · CourseList + CourseEditor (onEnd, manual delete)
   Files: src/components/CourseList.jsx, src/components/CourseEditor.jsx, src/views/Progress.jsx
   - **CourseList (Month mode):** the courses active that month, each with `courseStats`: the current week, per-week %, the derived end date, and "Habits keep going" or "Habits stop on <date>".
   - **CourseEditor (a `Modal`):** edits the title, start date, notes and "When the course ends" (`seg`: Keep habits / Stop habits, with help text "Stopping hides them after <end>; your history stays"), and adds, edits or removes week steps. Each step lists its habits and blocks, with "Add habit to this week" (opens `TaskEditor` with `defaults.step`) and "Add block to this week" (opens `BlockEditor` with `defaults.step`).
   - **Deleting the course:** shows "Its habits and blocks will be kept."
-  - **"Delete these habits" (FR-21):** a separate danger button. It counts the linked tasks, blocks (and the tasks on those blocks) and their completions, then confirms: "This permanently deletes N habits and M check-offs. Past weeks' points will go down. To stop them without losing history, choose Stop habits instead." On confirm, it deletes through `DataContext.remove`.
+  - **"Delete these habits" (FR-21):** a separate danger button. It displays the counts from `courseDeleteImpact(data, course)` (F-15); CourseEditor doesn't compute them itself. Then it confirms: "This permanently deletes N habits and M check-offs. Past weeks' points will go down. To stop them without losing history, choose Stop habits instead." On confirm, it deletes through `DataContext.remove`.
 
-  Depends on: F-16 · Covers: FR-17, FR-19, FR-20, FR-21
-  Accepts: nothing is deleted without the confirmation. Choosing Stop never deletes anything. Works at 360px and in dark mode.
+  Depends on: F-16 · Covers: FR-17, FR-19, FR-20, FR-21, NFR-5, NFR-6
+  Accepts: the warning's numbers come from `courseDeleteImpact`. Nothing is deleted without the confirmation. Choosing Stop never deletes anything. Works at 360px and in dark mode.
   Tests: `npm run build`
 - [ ] F-19 · Model: sonnet · TaskEditor: course step and Ends date
   Files: src/components/TaskEditor.jsx
@@ -540,6 +549,7 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   - Without a step, an optional "Ends" date (`recurUntil`) appears next to "Starting".
 
   Depends on: F-16 · Covers: FR-18
+  Accepts: the shown window comes from `activeWindow`, not from `task.date`. Choosing a step hides the date fields, and saving matches the server (date and `recurUntil` cleared). Clearing the step brings the date fields back. An unstepped habit's "Ends" saves to `recurUntil` and can be cleared. Works at 360px.
   Tests: `npm run build`
 - [ ] F-20 · Model: sonnet · BlockEditor: course step
   Files: src/components/BlockEditor.jsx
@@ -549,34 +559,39 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   Tests: `npm run build`
 - [ ] F-21 · Model: sonnet · Pass schedule at every block call site
   Files: src/views/Calendar.jsx, src/views/Home.jsx, src/views/Now.jsx
-  Pass `data.schedule` to `blocksForDate` and `upcomingBlocks` wherever they're called. Grep for `blockOccursOn(`, `blocksForDate(` and `upcomingBlocks(` to confirm there are no others. Views that use `instancesForDate` or `weekStats` get it through `data` automatically.
+  Pass `data.schedule` to `blocksForDate(blocks, date, schedule)` and `upcomingBlocks(blocks, today, nowMinutes, schedule, windowMinutes)` wherever they're called. Grep for `blockOccursOn(`, `blocksForDate(` and `upcomingBlocks(` to confirm there are no others. Views that use `instancesForDate` or `weekStats` get it through `data` automatically.
   Depends on: F-16 · Covers: FR-22, FR-18
   Accepts: a stepped block doesn't appear on the Calendar, Home or `#now` before its step's week, or after a `stop` course ends.
   Tests: `npm run build`, `npm run test:stats`
 
 ### Review & Testing (owner: reviewer)
-- [ ] T-1 · Model: sonnet · Review Feature 1
+- [x] T-1 · Model: sonnet · Review Feature 1
   Files: src/lib/stats.js, src/views/Now.jsx, src/views/Home.jsx, src/App.jsx, public/manifest.webmanifest
   Check the `#now` view at 360px and 1280px, in light and dark mode, and that the manifest has no errors.
-  Depends on: F-1–F-4
+  Depends on: F-1–F-4 · Covers: FR-1, NFR-5, NFR-6
+  Accepts: `#now` works at 360px and 1280px in light and dark mode, is usable with a keyboard, and shows a 12:15 AM block at 11:30 PM. The manifest shows no errors in DevTools. Tests pass and the build succeeds.
   Tests: `npm run test:stats`, `npm run build`
 - [ ] T-2 · Model: sonnet · Review Feature 2
   Files: src/lib/stats.js, src/lib/messages.js, src/lib/affirmations.js, src/components/ScoreCard.jsx, pocketbase/pb_migrations/1794200000_day_end.js
   Confirm the score card and streaks are derived, not stored, that past days use `completions.points`, and that the affirmation is stable per date.
-  Depends on: B-1, F-5–F-8
+  Depends on: B-1, F-5–F-8 · Covers: FR-3, FR-4, FR-6, FR-10, NFR-4
+  Accepts: the score card and streaks are derived and nothing new is stored. Past days use `completions.points`. The affirmation is the same for a given date on Home and in `affirmationFor`. The day-end timing helpers respect the 15-minute grace window. All three test suites pass.
   Tests: `npm run test:api`, `npm run test:stats`, `npm run test:reminders`
 - [ ] T-3 · Model: sonnet · Review Feature 3
   Files: pocketbase/pb_migrations/1794300000_energy.js, src/lib/stats.js, src/components/EnergyCheckin.jsx, src/components/TaskEditor.jsx
   Check ownership of `checkins` (the intruder cases), that there's one check-in per day, and that the effort select matches `EFFORT_LEVELS`.
-  Depends on: B-2, F-9–F-11
+  Depends on: B-2, F-9–F-11 · Covers: FR-7, FR-8, FR-9, NFR-1, NFR-2
+  Accepts: the intruder can't list, view or update another user's check-in. A second check-in for the same date is rejected and the UI updates the existing one. Bad energy and effort values are rejected by the server. The selects match `ENERGY_LEVELS` and `EFFORT_LEVELS`. Tests pass.
   Tests: `npm run test:api`, `npm run test:stats`
 - [ ] T-4 · Model: opus · Review Feature 4
   Files: src/lib/reminders.js, src/lib/messages.js, pocketbase/pb_hooks/guards.js, push/sender.mjs, src/views/Settings.jsx
   - `NUDGE_STEP` and `MAX_NUDGES` match between `guards.js` and `reminders.js`, and the TTL matches the grace window.
   - The one-off completion fix works in the sender.
   - The celebration is sent once, and the closing line follows D-13.
+  - `reminders.js`, `messages.js` and `affirmations.js` import nothing browser-only or Vite-only (NFR-3); the sender imports them without errors.
 
-  Depends on: B-3, B-4, F-12, F-13
+  Depends on: B-3, B-4, F-12, F-13 · Covers: FR-10, FR-11, FR-12, FR-13, NFR-2, NFR-4
+  Accepts: the sync constants match, the TTL equals the time left in the grace window, each message goes out at most once per device, kind, day and slot, the server rejects every bad `nudgeTimes` input listed in §9, a one-off completed last week isn't counted as open, the shared libs are Node-safe, and the test push arrives. Tests pass.
   Tests: `npm run test:reminders`, `npm run test:api`, then a test push
 - [ ] T-5 · Model: opus · Review Feature 5
   Files: pocketbase/pb_migrations/1794500000_plans_courses.js, pocketbase/pb_hooks/guards.js, pocketbase/pb_hooks/main.pb.js, src/lib/stats.js, src/lib/reminders.js, push/sender.mjs, src/components/CourseEditor.jsx
@@ -589,7 +604,8 @@ Notifications come after the score card because the day-end push reuses `scoreHe
   - stepped blocks respect their window on the Calendar, Home and `#now`
   - Progress Month mode fits at 360px
 
-  Depends on: B-6–B-8, F-15–F-21
+  Depends on: B-6–B-8, F-15–F-21 · Covers: FR-15, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, NFR-1, NFR-2, NFR-8
+  Accepts: every check above holds: cross-user relations rejected, nothing derived is stored, `activeWindow` is the single window rule and `guards.js` matches it, `stop` deletes nothing and past weeks are unchanged, "Delete these habits" warns with `courseDeleteImpact` counts first, stepped blocks respect their window everywhere, and Month mode fits at 360px. All four commands pass.
   Tests: all of `npm run test:api`, `npm run test:stats`, `npm run test:reminders`, `npm run build`
 
 ### Task counts
@@ -654,3 +670,9 @@ Backend: B-1 to B-8, of which B-5 is optional (8). Frontend: F-1 to F-21, of whi
   - **Unlinked items:** added `tasks.recurUntil`, so habits unlinked from a stopped course keep their end. The delete hooks write start and end dates (B-7).
   - **New tasks:** F-20 (BlockEditor step) and F-21 (pass `schedule` at every call site).
   - **Task format:** switched to the "ID · Model · Title / Files" format, and F-14/B-5 split into separate lines. Added "Where we left off" and the rule to update it every session.
+- 2026-11-11: Resolved plan-supervisor FIX findings.
+  - **Daily messages and windows:** F-12 states `dueDailyMessages({ now, user, data })` reads `data.schedule` through `instancesForDate`. F-15 now names `dueDailyMessages` in its `reminders.js` work, depends on F-12, and tests that daily messages skip stepped habits outside their window.
+  - **Ordering:** F-9 depends on F-2 (uses `upcomingBlocks`). F-6 writes the phase 1 `habitStreak`; F-15 switches it to `activeWindow`. `upcomingBlocks` signature is now `(blocks, today, nowMinutes, schedule, windowMinutes = 180)` in §7, F-2 and F-21.
+  - **Task format:** Accepts lines added to F-9, F-10, F-14, F-17, F-19, B-5 and B-6. T-1 to T-5 gained Covers and Accepts lines.
+  - **NFR coverage:** NFR-5 and NFR-6 added to F-3, F-7, F-16 and F-18. F-12 and F-15 accept on NFR-3 (no browser or Vite imports in shared libs); T-4 checks it.
+  - **Course deletion:** new derived `courseDeleteImpact(data, course)` in `stats.js` (F-15, §7), displayed by F-18. B-7 dates daily and weekday blocks at the step's start (weekday-keeping applies only to weekly blocks). F-16 reloads `plan_targets` on delete.

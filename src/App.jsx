@@ -8,6 +8,7 @@ import Calendar from "./views/Calendar";
 import Tasks from "./views/Tasks";
 import Progress from "./views/Progress";
 import Settings from "./views/Settings";
+import Now from "./views/Now";
 
 const VIEWS = [
   { id: "home", label: "Home", icon: "☀", component: Home },
@@ -15,7 +16,11 @@ const VIEWS = [
   { id: "tasks", label: "To-do", icon: "✓", component: Tasks },
   { id: "progress", label: "Progress", icon: "↗", component: Progress },
   { id: "settings", label: "Settings", icon: "⚙", component: Settings },
+  // Routes that aren't nav tabs: reachable by hash only (#now, the app shortcut).
+  { id: "now", label: "Next 3 hours", component: Now, hidden: true },
 ];
+
+const NAV_VIEWS = VIEWS.filter((v) => !v.hidden);
 
 function useHashView() {
   const read = () => {
@@ -40,9 +45,9 @@ function Shell() {
     <div className="app">
       <nav className="nav">
         <div className="nav-brand">Notch</div>
-        {VIEWS.map((v, i) => (
+        {NAV_VIEWS.map((v, i) => (
           <Fragment key={v.id}>
-            {i === VIEWS.length - 1 && <div className="nav-spacer" />}
+            {i === NAV_VIEWS.length - 1 && <div className="nav-spacer" />}
             <button
               className={`nav-item ${view === v.id ? "active" : ""}`}
               onClick={() => go(v.id)}

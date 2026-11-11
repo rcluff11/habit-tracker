@@ -234,6 +234,21 @@ export default function Settings() {
           <ColorPicker value={newCat.color} onChange={(color) => setNewCat({ ...newCat, color })} />
         </form>
       </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Quick access</h2>
+          <span className="small muted">Jump straight to "Next 3 hours"</span>
+        </div>
+        <ul className="small quick-access">
+          <li><strong>Android:</strong> long-press the Notch app icon, then tap "Next 3 hours".</li>
+          <li><strong>Desktop (Chrome or Edge):</strong> right-click the Notch app icon in the taskbar, dock, or Start menu, then choose "Next 3 hours".</li>
+          <li><strong>iPhone and iPad:</strong> iOS doesn't support app shortcuts. Use the "Open →" link on Home instead.</li>
+        </ul>
+        <p className="small muted quick-access-note">
+          The shortcut appears after the app updates, or after you reinstall it.
+        </p>
+      </div>
     </div>
   );
 }

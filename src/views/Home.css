@@ -12,7 +12,6 @@
 .upcoming li { display: flex; gap: 12px; align-items: stretch; }
 .upcoming-bar { width: 6px; border-radius: 3px; flex: none; }
 .upcoming li.live .task-title { font-weight: 700; }
-.live-chip { background: var(--accent-soft); color: var(--accent-strong); padding: 0 8px; }
 
 .today-progress { display: flex; align-items: center; gap: 20px; }
 .today-progress .stack { display: flex; flex-direction: column; gap: 4px; }
@@ -28,3 +27,4 @@
   transition: stroke-dashoffset 0.4s ease;
 }
 .ring text { font-weight: 700; font-size: 20px; fill: var(--text); }
+.card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; }

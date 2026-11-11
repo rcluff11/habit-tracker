@@ -13,5 +13,14 @@
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Next 3 hours",
+      "short_name": "Next 3h",
+      "description": "See what is coming up in the next three hours",
+      "url": "/#now",
+      "icons": [{ "src": "/shortcut-now-96.png", "sizes": "96x96", "type": "image/png" }]
+    }
   ]
 }

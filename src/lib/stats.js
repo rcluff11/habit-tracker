@@ -21,6 +21,40 @@ export function blocksForDate(blocks, date) {
   return blocks.filter((b) => blockOccursOn(b, date)).sort((a, b) => a.start - b.start);
 }
 
+/**
+ * Block instances that overlap [nowMinutes, nowMinutes + windowMinutes), sorted by start.
+ * Looks at today and tomorrow so a window that crosses midnight still sees early-morning
+ * blocks (same approach as dueReminders in reminders.js).
+ *
+ * schedule: accepted but unused until F-21, which wires it into blocksForDate.
+ *
+ * Returns [{ block, date, start, end, live }]:
+ *  - date: the occurrence date (for a recurring block, not block.date)
+ *  - start, end: minutes relative to today's midnight (tomorrow's blocks get +1440)
+ *  - live: started but not yet ended
+ */
+export function upcomingBlocks(blocks, today, nowMinutes, schedule, windowMinutes = 180) {
+  const until = nowMinutes + windowMinutes;
+  const out = [];
+  for (const [date, dayOffset] of [[today, 0], [addDays(today, 1), 1440]]) {
+    for (const block of blocksForDate(blocks, date)) {
+      const start = block.start + dayOffset;
+      const end = block.end + dayOffset;
+      if (end > nowMinutes && start < until) {
+        out.push({ block, date, start, end, live: start <= nowMinutes });
+      }
+    }
+  }
+  return out;
+}
+
+/** Today's top 3: starred tasks if any, otherwise the highest-point instances. */
+export function topThree(instances) {
+  const priorities = instances.filter((i) => i.task.priority);
+  return (priorities.length ? priorities : [...instances].sort((a, b) => (b.task.points || 0) - (a.task.points || 0)))
+    .slice(0, 3);
+}
+
 function completionKey(taskId, date) {
   return `${taskId}|${date}`;
 }
