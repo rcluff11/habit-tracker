@@ -1,11 +1,146 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ColorPicker from "../components/ColorPicker";
 import { pb } from "../lib/pb";
 import { useData } from "../lib/DataContext";
 import { DEFAULT_COLOR, PALETTES, isHex } from "../lib/colors";
 import { disablePush, enablePush, isPushEnabled, pushSupport } from "../lib/push";
-import { describeOffsets, userOffsets } from "../lib/reminders";
+import { DEFAULT_DAY_END, EARLIEST_DAY_END, dayEndMinutes, describeOffsets, nudgeTimesFor, userOffsets } from "../lib/reminders";
+import { formatTime } from "../lib/time";
 import OffsetPicker from "../components/OffsetPicker";
+import NudgeTimesPicker from "../components/NudgeTimesPicker";
+
+const DEFAULT_AFFIRMATION = "08:00";
+
+// One optimistic user field with a last-write-wins queue. set() shows the value at once and saves it. An edit made
+// while a save is in flight replaces any earlier queued edit and is saved when the current save settles, so nothing is
+// dropped, nothing saves twice, and a failure rolls back to the last server-confirmed value only if nothing newer is queued.
+// No `disabled` is used, so keyboard focus is never lost. set() resolves to true (saved) or false (failed).
+const NONE = Symbol("none");
+function useUserField(user, field, initial) {
+  const [value, setValue] = useState(initial);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const latest = useRef(initial); // what the UI shows (optimistic)
+  const confirmed = useRef(initial); // what the server last accepted
+  const pending = useRef(NONE);
+  const running = useRef(null);
+  const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+
+  const drain = async () => {
+    let ok = true;
+    while (pending.current !== NONE) {
+      const next = pending.current;
+      pending.current = NONE;
+      if (same(next, confirmed.current)) {
+        ok = true;
+        continue;
+      }
+      try {
+        await pb.collection("users").update(user.id, { [field]: next });
+        confirmed.current = next;
+        ok = true;
+      } catch (err) {
+        ok = false;
+        if (pending.current === NONE) {
+          latest.current = confirmed.current;
+          setValue(confirmed.current);
+          setError(err.response?.data?.[field]?.message || err.message || "Couldn't save. Try again.");
+        }
+      }
+    }
+    return ok;
+  };
+
+  const set = (next) => {
+    if (same(next, latest.current)) return running.current ?? Promise.resolve(true);
+    latest.current = next;
+    pending.current = next;
+    setValue(next);
+    setError("");
+    if (!running.current) {
+      setBusy(true);
+      running.current = drain().finally(() => {
+        running.current = null;
+        setBusy(false);
+      });
+    }
+    return running.current;
+  };
+  return { value, set, error, busy, latest: () => latest.current };
+}
+
+function AffirmationField({ user }) {
+  const field = useUserField(user, "affirmationAt", user.affirmationAt || "");
+  const [draft, setDraft] = useState(user.affirmationAt || DEFAULT_AFFIRMATION);
+  const draftRef = useRef(draft);
+  const timer = useRef(null);
+  const lastTime = useRef(user.affirmationAt || DEFAULT_AFFIRMATION);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const on = field.value !== "";
+  if (field.value) lastTime.current = field.value;
+
+  const toggle = async (checked) => {
+    clearTimeout(timer.current);
+    // Turning on restores the last non-empty time (else the default), never a stale draft.
+    const time = lastTime.current;
+    if (checked) {
+      draftRef.current = time;
+      setDraft(time);
+    }
+    await field.set(checked ? time : "");
+  };
+  const commit = async (next) => {
+    clearTimeout(timer.current);
+    if (!/^\d{2}:\d{2}$/.test(next)) {
+      const back = field.latest() || DEFAULT_AFFIRMATION;
+      draftRef.current = back;
+      setDraft(back);
+      return;
+    }
+    const ok = await field.set(next);
+    // Only revert the draft if the user hasn't typed something newer meanwhile.
+    if (!ok && draftRef.current === next && field.latest()) {
+      draftRef.current = field.latest();
+      setDraft(field.latest());
+    }
+  };
+  const onChange = (e) => {
+    const next = e.target.value;
+    draftRef.current = next;
+    setDraft(next);
+    clearTimeout(timer.current);
+    if (on && /^\d{2}:\d{2}$/.test(next)) timer.current = setTimeout(() => commit(next), 600);
+  };
+
+  return (
+    <div className="field" aria-busy={field.busy}>
+      <label className="check">
+        <input type="checkbox" checked={on} onChange={(e) => toggle(e.target.checked)} />
+        <span>Daily affirmation</span>
+      </label>
+      {on && (
+        <div className="row-wrap nudge-add">
+          <label htmlFor="affirmation-at" className="small">Send at</label>
+          <input
+            id="affirmation-at"
+            className="input day-end-input"
+            type="time"
+            value={draft}
+            onChange={onChange}
+            onBlur={(e) => commit(e.target.value)}
+          />
+        </div>
+      )}
+      <p className="small muted">A short encouraging line each morning, the same one you see on Home.</p>
+      {field.error && <p className="error" role="alert">{field.error}</p>}
+    </div>
+  );
+}
+
+function NudgeField({ user }) {
+  const field = useUserField(user, "nudgeTimes", nudgeTimesFor(user));
+  return <NudgeTimesPicker value={field.value} onChange={field.set} error={field.error} busy={field.busy} />;
+}
 
 function Reminders() {
   const { user } = useData();
@@ -55,10 +190,10 @@ function Reminders() {
 
   return (
     <div className="card form">
-      <h2>Reminders</h2>
+      <h2>Notifications</h2>
       <p className="small muted">
-        Get notifications before calendar blocks and at task reminder times, even when Notch is closed. Turn this on
-        for each device you want reminders on.
+        Get notifications before calendar blocks, at task reminder times, and for affirmations and nudges, even when
+        Notch is closed. Turn this on for each device you want notifications on.
       </p>
       {support.supported ? (
         <button className={`btn ${enabled ? "" : "btn-primary"}`} onClick={toggle} disabled={busy}>
@@ -76,8 +211,98 @@ function Reminders() {
           {defaults.length ? `Blocks remind you ${describeOffsets(defaults)}.` : "Blocks won't remind you unless you set it on the block."}{" "}
           You can change this for any block.
         </p>
-        {saveError && <p className="error">{saveError}</p>}
+        {saveError && <p className="error" role="alert">{saveError}</p>}
       </div>
+
+      <AffirmationField user={user} />
+      <NudgeField user={user} />
+    </div>
+  );
+}
+
+function DayEndPush({ user }) {
+  const field = useUserField(user, "dayEndPush", user.dayEndPush === true);
+  return (
+    <div className="field" aria-busy={field.busy}>
+      <label className="check">
+        <input type="checkbox" checked={field.value} onChange={(e) => field.set(e.target.checked)} />
+        <span>Send my day-end score</span>
+      </label>
+      <p className="small muted">A notification at the time above with your score and a closing line.</p>
+      {field.error && <p className="error" role="alert">{field.error}</p>}
+    </div>
+  );
+}
+
+function DayEnd() {
+  const { user } = useData();
+  // Same last-write-wins queue as the other fields: it compares against the value being saved, not the saved one.
+  const field = useUserField(user, "dayEndAt", user.dayEndAt || "");
+  const [draft, setDraft] = useState(user.dayEndAt || DEFAULT_DAY_END);
+  const draftRef = useRef(draft);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const showDraft = (v) => {
+    draftRef.current = v;
+    setDraft(v);
+  };
+
+  // Saving updates the auth store record, which App passes down as `user`, so Home sees it at once.
+  const commit = async (next) => {
+    clearTimeout(timer.current);
+    if (!next) {
+      showDraft(field.latest() || DEFAULT_DAY_END);
+      return;
+    }
+    const ok = await field.set(next);
+    // Only revert the draft if the user hasn't typed something newer meanwhile.
+    if (!ok && draftRef.current === next) showDraft(field.latest() || DEFAULT_DAY_END);
+  };
+
+  const reset = async () => {
+    clearTimeout(timer.current);
+    showDraft(DEFAULT_DAY_END);
+    const ok = await field.set("");
+    if (!ok && draftRef.current === DEFAULT_DAY_END) showDraft(field.latest() || DEFAULT_DAY_END);
+  };
+
+  const onChange = (e) => {
+    const next = e.target.value;
+    showDraft(next);
+    clearTimeout(timer.current);
+    // A complete HH:MM saves after a short pause; the blur save below still covers everything else.
+    if (/^\d{2}:\d{2}$/.test(next)) timer.current = setTimeout(() => commit(next), 600);
+  };
+  const onBlur = (e) => commit(e.target.value);
+
+  return (
+    <div className="card form">
+      <h2>End of day</h2>
+      <label className="field" htmlFor="day-end-at">
+        <span>Day ends at</span>
+      </label>
+      <div className="row row-wrap">
+        <input
+          id="day-end-at"
+          className="input day-end-input"
+          type="time"
+          min={EARLIEST_DAY_END}
+          value={draft}
+          aria-busy={field.busy}
+          onChange={onChange}
+          onBlur={onBlur}
+          aria-describedby={field.error ? "day-end-help day-end-error" : "day-end-help"}
+        />
+        <button className="btn btn-sm" type="button" onClick={reset} disabled={field.value === "" && draft === DEFAULT_DAY_END}>
+          Reset to default
+        </button>
+      </div>
+      <p id="day-end-help" className="small muted">
+        The end-of-day score card appears on Home after this time. Pick {formatTime(dayEndMinutes({ dayEndAt: EARLIEST_DAY_END }))} or later. Default is {formatTime(dayEndMinutes({}))}.
+      </p>
+      {field.error && <p id="day-end-error" className="error" role="alert">{field.error}</p>}
+      <DayEndPush user={user} />
     </div>
   );
 }
@@ -159,6 +384,8 @@ export default function Settings() {
         </div>
 
         <Reminders />
+
+        <DayEnd />
 
         <div className="card form">
           <h2>Color palette</h2>

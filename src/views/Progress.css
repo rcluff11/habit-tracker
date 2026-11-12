@@ -8,6 +8,9 @@
 .summary-denom { color: var(--muted); font-size: 1rem; font-weight: 500; letter-spacing: 0; }
 .summary-card .progress-bar { margin-top: 13px; }
 .daily-chart { display: grid; grid-template-columns: repeat(7, minmax(34px, 1fr)); gap: clamp(6px, 2vw, 18px); align-items: end; min-height: 230px; padding: 4px 4px 0; }
+button.day-column { width: 100%; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; border-radius: 10px; }
+button.day-column:hover .bar-track { background: var(--border); }
+button.day-column:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .day-column { display: grid; grid-template-rows: 22px 160px auto auto; gap: 6px; min-width: 0; align-items: end; text-align: center; }
 .day-value { color: var(--muted); font-size: .72rem; }
 .bar-track { display: flex; align-items: flex-end; justify-content: center; height: 160px; border-radius: 10px; background: var(--surface-2); overflow: hidden; }
@@ -33,8 +36,11 @@
 .reward-meta { color: var(--muted); font-size: .83rem; margin-bottom: 8px; }
 .reward-category { margin-left: 8px; vertical-align: middle; }
 .claimed { color: var(--good); font-weight: 700; }
+.progress-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 560px) {
   .progress-page .page-header { align-items: stretch; }
+  .progress-controls { flex-direction: column; align-items: stretch; }
+  .progress-controls .seg { align-self: flex-start; }
   .week-switcher { justify-content: space-between; }
   .week-switcher .week-label { flex: 1; }
   .category-row { grid-template-columns: minmax(90px, .9fr) 1.4fr auto; gap: 8px; }

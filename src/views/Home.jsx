@@ -1,24 +1,15 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TaskItem from "../components/TaskItem";
+import ScoreCard from "../components/ScoreCard";
+import EnergyCheckin from "../components/EnergyCheckin";
+import { dayEndMinutes } from "../lib/reminders";
 import TaskEditor from "../components/TaskEditor";
 import { useData } from "../lib/DataContext";
-import { instancesForDate, summarize, topThree, upcomingBlocks, weekStats } from "../lib/stats";
+import { instancesForDate, isDayComplete, summarize, topThree, upcomingBlocks, weekStats } from "../lib/stats";
+import { affirmationFor } from "../lib/affirmations";
 import { textOn } from "../lib/colors";
 import { formatDate, formatRange, greeting, nowMinutes, startOfWeek, todayISO } from "../lib/time";
 import "./Home.css";
-
-const AFFIRMATIONS = [
-  "Small steps every day add up to big change.",
-  "You don't have to be perfect to make progress.",
-  "Discipline is choosing what you want most over what you want now.",
-  "Done is better than perfect.",
-  "You've handled hard days before. You can handle this one.",
-  "Show up for yourself the way you show up for others.",
-  "Rest is part of the plan, not a break from it.",
-  "Your future self is cheering you on.",
-  "One focused hour beats a distracted day.",
-  "Progress, not pressure.",
-];
 
 function rewardProgress(reward, week) {
   const current =
@@ -55,27 +46,74 @@ function Ring({ percent }) {
   );
 }
 
+const DISMISS_KEY = "notch.scorecard.dismissed";
+
+function readDismissed() {
+  try {
+    return localStorage.getItem(DISMISS_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDismissed(date) {
+  try {
+    localStorage.setItem(DISMISS_KEY, date);
+  } catch {
+    // storage blocked: dismissal lasts until the page reloads
+  }
+}
+
 export default function Home({ go }) {
   const data = useData();
   const { user, categoriesById, rewards } = data;
   const today = todayISO();
   const now = nowMinutes();
   const [editing, setEditing] = useState(null);
+  const [dismissedDate, setDismissedDate] = useState(readDismissed);
+
+  // Re-render every minute (and on return to the app) so the card appears at day end.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60000);
+    const onVisible = () => { if (document.visibilityState === "visible") setTick((t) => t + 1); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   const instances = instancesForDate(data, today, today);
   const day = summarize(instances, categoriesById);
+  const dayComplete = isDayComplete(day);
+  const showScoreCard = dismissedDate !== today && (now >= dayEndMinutes(user) || dayComplete);
+  const afterCardRef = useRef(null);
+  const focusAfterDismiss = useRef(false);
+  const dismissScoreCard = () => {
+    writeDismissed(today);
+    focusAfterDismiss.current = true;
+    setDismissedDate(today);
+  };
+  // The Dismiss button disappears, so hand focus to the next card's label.
+  useEffect(() => {
+    if (!showScoreCard && focusAfterDismiss.current) {
+      focusAfterDismiss.current = false;
+      afterCardRef.current?.focus();
+    }
+  }, [showScoreCard]);
   const week = weekStats(data, startOfWeek(today), today);
 
   const top3 = topThree(instances);
 
-  const upcoming = upcomingBlocks(data.blocks, today, now);
+  const upcoming = upcomingBlocks(data.blocks, today, now, data.schedule);
 
   const nextReward = rewards
     .filter((r) => !(r.claimedWeeks || []).includes(week.weekStart))
     .map((r) => ({ reward: r, ...rewardProgress(r, week) }))
     .sort((a, b) => a.remaining - b.remaining)[0];
 
-  const affirmation = AFFIRMATIONS[Math.floor(Date.now() / 86400000) % AFFIRMATIONS.length];
+  const affirmation = affirmationFor(today);
   const firstName = (user.name || "").split(" ")[0];
 
   return (
@@ -88,10 +126,22 @@ export default function Home({ go }) {
         <button className="btn btn-primary" onClick={() => setEditing({})}>+ Task</button>
       </div>
 
+      {showScoreCard && (
+        <section className="card score-home-card" aria-label="Today's score card">
+          <div className="card-head">
+            <h2>Today's score card</h2>
+            <button className="btn btn-ghost btn-sm" onClick={dismissScoreCard} aria-label="Dismiss today's score card">Dismiss</button>
+          </div>
+          <ScoreCard date={today} />
+        </section>
+      )}
+
       <div className="card affirmation">
-        <span className="muted small">Today's affirmation</span>
+        <span className="muted small" tabIndex={-1} ref={afterCardRef}>Today's affirmation</span>
         <p>{affirmation}</p>
       </div>
+
+      <EnergyCheckin today={today} now={now} instances={instances} />
 
       <div className="grid-2">
         <div className="card">

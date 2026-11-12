@@ -21,7 +21,7 @@ export default function Now({ go }) {
   }, []);
 
   const today = todayISO();
-  const upcoming = upcomingBlocks(data.blocks, today, nowMinutes());
+  const upcoming = upcomingBlocks(data.blocks, today, nowMinutes(), data.schedule);
   const top3 = topThree(instancesForDate(data, today, today));
 
   return (

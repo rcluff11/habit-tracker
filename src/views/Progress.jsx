@@ -1,9 +1,12 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useData } from "../lib/DataContext";
 import { weekStats } from "../lib/stats";
-import { addDays, formatDate, startOfWeek, todayISO } from "../lib/time";
+import { addDays, addMonths, formatDate, monthLabel, monthOf, startOfWeek, todayISO } from "../lib/time";
+import MonthPlan from "../components/MonthPlan";
+import CourseList from "../components/CourseList";
 import Modal from "../components/Modal";
 import CategoryChip from "../components/CategoryChip";
+import ScoreCard from "../components/ScoreCard";
 import "./Progress.css";
 
 const emptyReward = { title: "", kind: "points", target: "", category: "" };
@@ -23,9 +26,13 @@ export default function Progress() {
   const data = useData();
   const today = todayISO();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
+  const [mode, setMode] = useState("week");
+  const [month, setMonth] = useState(() => monthOf(today));
   const [editing, setEditing] = useState(null);
   const [rewardForm, setRewardForm] = useState(emptyReward);
   const [saving, setSaving] = useState(false);
+  const [scoreDate, setScoreDate] = useState(null);
+  const closeScore = useCallback(() => setScoreDate(null), []);
 
   const stats = useMemo(
     () => weekStats(data, weekStart, today),
@@ -115,13 +122,34 @@ export default function Progress() {
           <h1>Progress</h1>
           <p className="page-sub">A gentle look at what’s moving forward.</p>
         </div>
-        <div className="week-switcher" aria-label="Choose week">
-          <button className="btn btn-ghost" onClick={() => setWeekStart(addDays(weekStart, -7))} aria-label="Previous week">‹</button>
-          <button className="btn week-label" onClick={() => setWeekStart(startOfWeek(today))}>{formatWeek(weekStart)}</button>
-          <button className="btn btn-ghost" onClick={() => setWeekStart(addDays(weekStart, 7))} aria-label="Next week">›</button>
+        <div className="progress-controls">
+          <div className="seg" role="group" aria-label="Progress period">
+            <button type="button" className={mode === "week" ? "active" : ""} aria-pressed={mode === "week"} onClick={() => setMode("week")}>Week</button>
+            <button type="button" className={mode === "month" ? "active" : ""} aria-pressed={mode === "month"} onClick={() => setMode("month")}>Month</button>
+          </div>
+          {mode === "week" ? (
+            <div className="week-switcher" role="group" aria-label="Choose week">
+              <button className="btn btn-ghost" onClick={() => setWeekStart(addDays(weekStart, -7))} aria-label="Previous week">‹</button>
+              <button className="btn week-label" onClick={() => setWeekStart(startOfWeek(today))}>{formatWeek(weekStart)}</button>
+              <button className="btn btn-ghost" onClick={() => setWeekStart(addDays(weekStart, 7))} aria-label="Next week">›</button>
+            </div>
+          ) : (
+            <div className="week-switcher" role="group" aria-label="Choose month">
+              <button className="btn btn-ghost" onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month">‹</button>
+              <button className="btn week-label" onClick={() => setMonth(monthOf(today))}>{monthLabel(month)}</button>
+              <button className="btn btn-ghost" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month">›</button>
+            </div>
+          )}
         </div>
       </header>
 
+      {mode === "month" && (
+        <MonthPlan key={month} month={month} today={today}>
+          <CourseList month={month} today={today} />
+        </MonthPlan>
+      )}
+
+      {mode === "week" && <>
       <section className="grid-3 summary-grid" aria-label="Week summary">
         <article className="card summary-card">
           <div className="muted small">Complete</div>
@@ -143,15 +171,17 @@ export default function Progress() {
       <section className="card">
         <div className="card-head"><h2>Daily progress</h2><span className="muted small">{hasTasks ? "Monday to Sunday" : "A fresh week starts here"}</span></div>
         {hasTasks ? (
-          <div className="daily-chart" role="img" aria-label="Daily completion by day">
+          <div className="daily-chart" role="group" aria-label="Daily completion by day">
             {stats.byDay.map((day) => {
               const isToday = day.date === today;
-              return <div className={`day-column${isToday ? " today" : ""}`} key={day.date}>
-                <div className="day-value">{day.percent}%</div>
-                <div className="bar-track"><span style={{ height: `${clampPercent(day.percent)}%` }} /></div>
-                <div className="day-label">{formatDate(day.date, { weekday: "short" }).slice(0, 3)}</div>
-                <div className="day-points">{day.points} pts</div>
-              </div>;
+              return <button type="button" className={`day-column${isToday ? " today" : ""}`} key={day.date}
+                onClick={() => setScoreDate(day.date)}
+                aria-label={`${formatDate(day.date, { weekday: "long", day: "numeric", month: "long" })}: ${day.percent}% complete, ${day.points} points. Show score card.`}>
+                <span className="day-value">{day.percent}%</span>
+                <span className="bar-track"><span style={{ height: `${clampPercent(day.percent)}%` }} /></span>
+                <span className="day-label">{formatDate(day.date, { weekday: "short" }).slice(0, 3)}</span>
+                <span className="day-points">{day.points} pts</span>
+              </button>;
             })}
           </div>
         ) : <div className="empty">No tasks this week yet. Add a task and your daily story will appear here.</div>}
@@ -188,11 +218,16 @@ export default function Progress() {
           })}
         </div> : <div className="empty">No rewards yet. Give yourself something lovely to work toward.</div>}
       </section>
+      </>}
+
+      {scoreDate && <Modal title={`Score card · ${formatDate(scoreDate, { weekday: "long", day: "numeric", month: "long" })}`} onClose={closeScore}>
+        <ScoreCard date={scoreDate} />
+      </Modal>}
 
       {editing && <Modal title={editing === "new" ? "Add reward" : "Edit reward"} onClose={closeReward}>
         <form className="form" onSubmit={submitReward}>
           <label className="field"><span>Reward title</span><input className="input" value={rewardForm.title} onChange={(e) => setRewardForm({ ...rewardForm, title: e.target.value })} placeholder="A cozy coffee date" autoFocus required /></label>
-          <div className="field"><span>Measure progress by</span><div className="seg" role="group" aria-label="Reward type"><button type="button" className={rewardForm.kind === "points" ? "active" : ""} onClick={() => setRewardForm({ ...rewardForm, kind: "points" })}>Points</button><button type="button" className={rewardForm.kind === "percent" ? "active" : ""} onClick={() => setRewardForm({ ...rewardForm, kind: "percent", category: "" })}>% complete</button></div></div>
+          <div className="field"><span>Measure progress by</span><div className="seg" role="group" aria-label="Reward type"><button type="button" className={rewardForm.kind === "points" ? "active" : ""} aria-pressed={rewardForm.kind === "points"} onClick={() => setRewardForm({ ...rewardForm, kind: "points" })}>Points</button><button type="button" className={rewardForm.kind === "percent" ? "active" : ""} aria-pressed={rewardForm.kind === "percent"} onClick={() => setRewardForm({ ...rewardForm, kind: "percent", category: "" })}>% complete</button></div></div>
           <div className="form-row"><label className="field"><span>Target</span><input className="input" type="number" min="1" step="1" value={rewardForm.target} onChange={(e) => setRewardForm({ ...rewardForm, target: e.target.value })} required /></label>{rewardForm.kind === "points" ? <label className="field"><span>Category (optional)</span><select className="input" value={rewardForm.category} onChange={(e) => setRewardForm({ ...rewardForm, category: e.target.value })}><option value="">All categories</option>{data.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label> : <div />}</div>
           <div className="modal-actions"><div>{editing !== "new" && <button type="button" className="btn btn-ghost btn-danger" onClick={deleteReward} disabled={saving}>Delete</button>}</div><div className="row"><button type="button" className="btn btn-ghost" onClick={closeReward}>Cancel</button><button className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Save reward"}</button></div></div>
         </form>

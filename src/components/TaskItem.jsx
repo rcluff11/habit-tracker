@@ -1,12 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useData } from "../lib/DataContext";
-import { formatDate, formatTime } from "../lib/time";
+import { EFFORT_LEVELS, habitStreak, levelLabel } from "../lib/stats";
+import { formatDate, formatTime, todayISO } from "../lib/time";
 
 export default function TaskItem({ instance, onEdit, showDate = false }) {
-  const { categoriesById, blocks, toggleTask } = useData();
+  const data = useData();
+  const { categoriesById, blocks, toggleTask } = data;
   const { task, date, done } = instance;
   const cat = categoriesById[task.category];
   const block = task.block && blocks.find((b) => b.id === task.block);
+
+  // Only habits (daily or on a block) walk back through history; one-offs skip it.
+  const isHabit = Boolean(task.daily || task.block);
+  const weeklyBlock = block && block.recurrence === "weekly";
+  const today = todayISO();
+  const streak = useMemo(
+    () => (isHabit ? habitStreak(data, task, date, today) : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isHabit, data.completionIndex, data.blocks, data.schedule, task, date, today]
+  );
 
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -56,6 +68,12 @@ export default function TaskItem({ instance, onEdit, showDate = false }) {
           )}
           {block && <span>▦ {formatTime(block.start)} · {block.title}</span>}
           {task.daily && <span>↻ Daily</span>}
+          {EFFORT_LEVELS.includes(task.effort) && (
+            <span className="chip effort-chip"><span className="sr-only">Effort: </span>{levelLabel(task.effort)}</span>
+          )}
+          {streak >= 2 && (
+            <span className="chip"><span aria-hidden="true">🔥</span> {streak}<span className="sr-only"> {weeklyBlock ? "week" : "day"} streak</span></span>
+          )}
           {showDate && task.date && !task.daily && !task.block && <span>Due {formatDate(task.date)}</span>}
         </div>
         {failed && (

@@ -58,8 +58,8 @@ export default function Tasks() {
 
       <div className="row-wrap">
         <div className="seg">
-          <button className={mode === "day" ? "active" : ""} onClick={() => setMode("day")}>By day</button>
-          <button className={mode === "all" ? "active" : ""} onClick={() => setMode("all")}>All tasks</button>
+          <button className={mode === "day" ? "active" : ""} aria-pressed={mode === "day"} onClick={() => setMode("day")}>By day</button>
+          <button className={mode === "all" ? "active" : ""} aria-pressed={mode === "all"} onClick={() => setMode("all")}>All tasks</button>
         </div>
         {mode === "day" && (
           <div className="row">

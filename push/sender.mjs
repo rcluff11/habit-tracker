@@ -1,47 +1,66 @@
-// Sends push reminders before calendar blocks and at tasks' "remind me at" times.
-// Runs next to PocketBase (e.g. on the Google Cloud VM). See push/README.md.
+// Sends push reminders before calendar blocks and at tasks' "remind me at" times, plus the
+// opt-in daily messages (affirmation, progress nudges, day-end score). Runs next to PocketBase
+// (e.g. on the Google Cloud VM). See push/README.md.
 //
 //   node --env-file=push/.env push/sender.mjs          run forever, checking every minute
 //   node --env-file=push/.env push/sender.mjs --test   send a test notification to every device, then exit
+//
+// Importing this file (e.g. from scripts/reminders-test.mjs) only loads the pure helpers below;
+// nothing reads env, connects or sends unless the file is run directly.
 import webpush from "web-push";
 import PocketBase from "pocketbase";
-import { indexCompletions } from "../src/lib/stats.js";
+import { dirname, resolve } from "node:path";
+import { readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { indexCompletions, scheduleIndex } from "../src/lib/stats.js";
 import { addDays } from "../src/lib/time.js";
-import { dueReminders } from "../src/lib/reminders.js";
+import { dueReminders, dueDailyMessages } from "../src/lib/reminders.js";
 
 const TICK_MS = 60_000;
-const FALLBACK_TZ = "America/Denver";
+export const FALLBACK_TZ = "America/Denver";
 
-const required = ["PB_URL", "PB_EMAIL", "PB_PASSWORD", "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
-const missing = required.filter((k) => !process.env[k]);
-if (missing.length) {
-  console.error(`Missing settings: ${missing.join(", ")}. Copy push/.env.example to push/.env and fill it in.`);
-  process.exit(1);
-}
+// ---------------------------------------------------------------------------------------------
+// Pure helpers (no network, no env). Exported for tests.
 
-webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
-
-const pb = new PocketBase(process.env.PB_URL);
-pb.autoCancellation(false);
-
-async function ensureAuth() {
-  if (!pb.authStore.isValid) {
-    await pb.collection("_superusers").authWithPassword(process.env.PB_EMAIL, process.env.PB_PASSWORD);
-  }
-}
-
-// "Now" in a user's own timezone, e.g. { date: "2026-10-27", minutes: 655 }
-function localNow(timeZone) {
+/** "Now" in a timezone, e.g. { date: "2026-10-27", minutes: 655 }. Unknown zones use FALLBACK_TZ. */
+export function localNow(timeZone = FALLBACK_TZ, at = new Date()) {
   let fmt;
   try {
     fmt = new Intl.DateTimeFormat("en-CA", {
       timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
     });
   } catch {
-    return localNow(FALLBACK_TZ);
+    return localNow(FALLBACK_TZ, at);
   }
-  const p = Object.fromEntries(fmt.formatToParts(new Date()).map((x) => [x.type, x.value]));
+  const p = Object.fromEntries(fmt.formatToParts(at).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour) * 60 + Number(p.minute) };
+}
+
+/**
+ * Completions needed to tell what's done, as one filter:
+ *  - every completion on or after `since` (block and daily tasks are per day; two days before the
+ *    server's UTC date covers "today" and "yesterday" in every timezone), and
+ *  - every completion of a one-off task (not daily, no block), whatever its date. A one-off is done
+ *    once, and instancesForDate needs that completion to keep an old, finished one-off off today.
+ */
+export const COMPLETIONS_FILTER = "date >= {:since} || (task.daily = false && task.block = '')";
+export const completionsSince = (at = new Date()) => addDays(at.toISOString().slice(0, 10), -2);
+
+/**
+ * Everything due right now for one device. Pure.
+ * now:  localNow(sub.timezone): the device's local date and minutes, never server UTC
+ * user: the users record (remindBefore, affirmationAt, nudgeTimes, dayEndAt, dayEndPush)
+ * blocks, tasks: that user's records; completionIndex: indexCompletions() of their completions
+ * checkins: that user's recent check-ins (nudge wording follows today's energy; none means default wording)
+ * schedule: scheduleIndex() of that user's courses and course_steps. Stepped blocks and habits are only
+ *           reminded, and only counted in nudges and the day-end push, inside their course window.
+ *           Missing means "no courses".
+ * Returns [{ key, title, body, url, tag, topic, ttl }]; the caller dedupes on `subId|key`.
+ */
+export function buildMessagesForSub({ now, user, blocks, tasks, completionIndex, checkins = [], schedule }) {
+  const reminders = dueReminders({ now, blocks, tasks, completionIndex, userDefault: user?.remindBefore, schedule });
+  const daily = user ? dueDailyMessages({ now, user, data: { tasks, blocks, completionIndex, checkins, schedule } }) : [];
+  return [...reminders, ...daily];
 }
 
 function groupBy(list, key) {
@@ -53,9 +72,20 @@ function groupBy(list, key) {
   return map;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Runtime (only when run directly).
+
+let pb;
+
+async function ensureAuth() {
+  if (!pb.authStore.isValid) {
+    await pb.collection("_superusers").authWithPassword(process.env.PB_EMAIL, process.env.PB_PASSWORD);
+  }
+}
+
 async function send(sub, { title, body, url, tag, topic, ttl }) {
   try {
-    // TTL: the push service drops the reminder rather than deliver it late.
+    // TTL: the push service drops the message rather than deliver it late.
     await webpush.sendNotification(sub.subscription, JSON.stringify({ title, body, url, tag }), {
       TTL: ttl,
       urgency: "high",
@@ -74,77 +104,167 @@ async function send(sub, { title, body, url, tag, topic, ttl }) {
   }
 }
 
-// Completions needed to tell what's done: recent days (blocks, daily tasks) plus any
-// completion of a one-off task that has a reminder (one-offs are done once, any day).
-async function loadCompletions(tasks) {
-  const since = addDays(new Date().toISOString().slice(0, 10), -2);
-  const recent = await pb.collection("completions").getFullList({ filter: pb.filter("date >= {:since}", { since }) });
-  const oneOffIds = tasks.filter((t) => t.remindAt && !t.block && !t.daily).map((t) => t.id);
-  const older = [];
-  for (let i = 0; i < oneOffIds.length; i += 50) {
-    const chunk = oneOffIds.slice(i, i + 50);
-    const params = Object.fromEntries(chunk.map((id, j) => [`t${j}`, id]));
-    const filter = pb.filter(chunk.map((_, j) => `task = {:t${j}}`).join(" || "), params);
-    older.push(...(await pb.collection("completions").getFullList({ filter })));
+// "subId|msg.key" -> sent-at ms, so each message goes out once per device. Saved to SENT_LOG after
+// each tick that sends something, so a restart inside a message's grace window doesn't send it again.
+const SENT_KEEP_MS = 2 * 86_400_000;
+const SENT_LOG = process.env.SENT_LOG || resolve(dirname(fileURLToPath(import.meta.url)), ".sent.json");
+let sent = new Map();
+
+/** Parse a saved sent log, dropping entries older than two days (or anything malformed). Pure. */
+export function parseSentLog(text, now = Date.now()) {
+  const map = new Map();
+  let entries;
+  try {
+    entries = Object.entries(JSON.parse(text));
+  } catch {
+    return map;
   }
-  const byId = new Map([...recent, ...older].map((c) => [c.id, c]));
-  return [...byId.values()];
+  for (const [key, at] of entries) if (typeof at === "number" && now - at < SENT_KEEP_MS) map.set(key, at);
+  return map;
 }
 
-const sent = new Map(); // "subId|item|id|day|offset" -> sent-at ms, so each reminder goes out once
+function loadSentLog() {
+  try {
+    sent = parseSentLog(readFileSync(SENT_LOG, "utf8"));
+  } catch (err) {
+    if (err.code !== "ENOENT") console.warn(`Couldn't read ${SENT_LOG}:`, err.message);
+  }
+}
 
+function saveSentLog() {
+  try {
+    // Write then rename, so a crash mid-write can't leave a half-written log.
+    writeFileSync(`${SENT_LOG}.tmp`, JSON.stringify(Object.fromEntries(sent)));
+    renameSync(`${SENT_LOG}.tmp`, SENT_LOG);
+  } catch (err) {
+    console.warn(`Couldn't save ${SENT_LOG}:`, err.message);
+  }
+}
+
+const missingWarned = new Set(); // collection names already warned about
+
+// A phase 2 collection that may not exist yet (migrations not deployed): a 404 means "empty", so
+// block and task reminders keep going. Any other error still fails the tick.
+async function optionalList(name, options) {
+  try {
+    return await pb.collection(name).getFullList(options);
+  } catch (err) {
+    if (err?.status !== 404) throw err;
+    if (!missingWarned.has(name)) {
+      missingWarned.add(name);
+      console.warn(`Collection "${name}" not found; treating it as empty. Deploy pb_migrations and restart PocketBase, then restart the sender.`);
+    }
+    return [];
+  }
+}
+
+// Queries per tick: subscriptions, then users + blocks + tasks + completions + check-ins + courses +
+// course steps in parallel. Eight in total (each may page inside getFullList); none per subscription or per task.
 async function tick() {
   await ensureAuth();
   const subs = await pb.collection("push_subscriptions").getFullList();
   if (!subs.length) return;
 
-  const [users, blocks, tasks] = await Promise.all([
-    pb.collection("users").getFullList({ fields: "id,remindBefore" }),
+  const since = completionsSince();
+  const [users, blocks, tasks, completions, checkins, courses, steps] = await Promise.all([
+    pb.collection("users").getFullList({ fields: "id,remindBefore,dayEndAt,affirmationAt,nudgeTimes,dayEndPush" }),
     pb.collection("blocks").getFullList(),
     pb.collection("tasks").getFullList(),
+    pb.collection("completions").getFullList({ sort: "created", filter: pb.filter(COMPLETIONS_FILTER, { since }) }),
+    // Same two-day cutoff: covers "today" in every timezone. One check-in per user per day.
+    optionalList("checkins", { fields: "user,date,energy", filter: pb.filter("date >= {:since}", { since }) }),
+    // All of them, unfiltered: a course's end comes from its highest step week.
+    optionalList("courses", { fields: "id,user,startDate,onEnd" }),
+    optionalList("course_steps", { fields: "id,user,course,week" }),
   ]);
-  const completions = await loadCompletions(tasks);
   const usersById = new Map(users.map((u) => [u.id, u]));
   const blocksByUser = groupBy(blocks, "user");
   const tasksByUser = groupBy(tasks, "user");
   const completionsByUser = groupBy(completions, "user");
+  const checkinsByUser = groupBy(checkins, "user");
+  const coursesByUser = groupBy(courses, "user");
+  const stepsByUser = groupBy(steps, "user");
+  let changed = false; // whether the sent log needs saving
+  const indexByUser = new Map(); // built once per user, shared by all their devices
+  const scheduleByUser = new Map(); // likewise
 
   for (const sub of subs) {
-    const reminders = dueReminders({
+    if (!indexByUser.has(sub.user)) indexByUser.set(sub.user, indexCompletions(completionsByUser.get(sub.user) || []));
+    if (!scheduleByUser.has(sub.user)) {
+      scheduleByUser.set(sub.user, scheduleIndex(coursesByUser.get(sub.user) || [], stepsByUser.get(sub.user) || []));
+    }
+    const messages = buildMessagesForSub({
       now: localNow(sub.timezone || FALLBACK_TZ),
+      user: usersById.get(sub.user),
       blocks: blocksByUser.get(sub.user) || [],
       tasks: tasksByUser.get(sub.user) || [],
-      completionIndex: indexCompletions(completionsByUser.get(sub.user) || []),
-      userDefault: usersById.get(sub.user)?.remindBefore,
+      completionIndex: indexByUser.get(sub.user),
+      checkins: checkinsByUser.get(sub.user) || [],
+      schedule: scheduleByUser.get(sub.user),
     });
-    for (const reminder of reminders) {
-      const key = `${sub.id}|${reminder.key}`;
+    for (const msg of messages) {
+      const key = `${sub.id}|${msg.key}`;
       if (sent.has(key)) continue;
-      if (await send(sub, reminder)) sent.set(key, Date.now());
+      if (await send(sub, msg)) {
+        sent.set(key, Date.now());
+        changed = true;
+      }
     }
   }
 
   // Forget anything older than two days.
-  const cutoff = Date.now() - 2 * 86_400_000;
-  for (const [key, at] of sent) if (at < cutoff) sent.delete(key);
-}
-
-if (process.argv.includes("--test")) {
-  await ensureAuth();
-  const subs = await pb.collection("push_subscriptions").getFullList();
-  let ok = 0;
-  for (const sub of subs) {
-    const test = { title: "Notch", body: "Reminders are working. Go notch a win! ✅", url: "/", tag: "test", topic: "test", ttl: 3600 };
-    if (await send(sub, test)) ok++;
+  const cutoff = Date.now() - SENT_KEEP_MS;
+  for (const [key, at] of sent) {
+    if (at < cutoff) {
+      sent.delete(key);
+      changed = true;
+    }
   }
-  console.log(`Sent test notification to ${ok} of ${subs.length} device(s).`);
-  process.exit(0);
+  if (changed) saveSentLog();
 }
 
-console.log(`Notch reminder sender running, checking every ${TICK_MS / 1000}s.`);
-// Run ticks back to back (never overlapping), one per minute.
-for (;;) {
-  const started = Date.now();
-  await tick().catch((err) => console.error("Tick failed:", err.message));
-  await new Promise((r) => setTimeout(r, Math.max(1000, TICK_MS - (Date.now() - started))));
+async function main() {
+  const required = ["PB_URL", "PB_EMAIL", "PB_PASSWORD", "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length) {
+    console.error(`Missing settings: ${missing.join(", ")}. Copy push/.env.example to push/.env and fill it in.`);
+    process.exit(1);
+  }
+
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+  pb = new PocketBase(process.env.PB_URL);
+  pb.autoCancellation(false);
+
+  if (process.argv.includes("--test")) {
+    await ensureAuth();
+    const subs = await pb.collection("push_subscriptions").getFullList();
+    let ok = 0;
+    for (const sub of subs) {
+      const test = { title: "Notch", body: "Reminders are working. Go notch a win! ✅", url: "/", tag: "test", topic: "test", ttl: 3600 };
+      if (await send(sub, test)) ok++;
+    }
+    console.log(`Sent test notification to ${ok} of ${subs.length} device(s).`);
+    process.exit(0);
+  }
+
+  loadSentLog();
+  console.log(`Notch reminder sender running, checking every ${TICK_MS / 1000}s (${sent.size} recent sends loaded).`);
+  // Run ticks back to back (never overlapping), one per minute.
+  for (;;) {
+    const started = Date.now();
+    await tick().catch((err) => console.error("Tick failed:", err.message));
+    await new Promise((r) => setTimeout(r, Math.max(1000, TICK_MS - (Date.now() - started))));
+  }
 }
+
+// Run only as the entry script, never when imported by a test.
+// realpath on both sides so symlinks and drive-letter case can't stop the service from starting.
+const realUrl = (p) => pathToFileURL(realpathSync(p)).href.toLowerCase();
+function isEntry() {
+  try {
+    return !!process.argv[1] && realUrl(resolve(process.argv[1])) === realUrl(fileURLToPath(import.meta.url));
+  } catch {
+    return false; // argv[1] isn't a real file (e.g. imported from -e): not the entry
+  }
+}
+if (isEntry()) await main();

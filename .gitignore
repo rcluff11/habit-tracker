@@ -8,3 +8,5 @@ pocketbase/pb_data/
 pocketbase/CHANGELOG.md
 pocketbase/LICENSE.md
 .netlify/
+push/.sent.json
+push/.sent.json.tmp

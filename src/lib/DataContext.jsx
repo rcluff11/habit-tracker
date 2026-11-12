@@ -1,10 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { pb } from "./pb";
-import { indexCompletions } from "./stats";
+import { indexCompletions, scheduleIndex } from "./stats";
 
 const DataContext = createContext(null);
 
-const COLLECTIONS = ["categories", "blocks", "tasks", "completions", "rewards"];
+const COLLECTIONS = ["categories", "blocks", "tasks", "completions", "rewards", "checkins", "plans", "plan_targets", "courses", "course_steps"];
+const PHASE2_COLLECTIONS = ["checkins", "plans", "plan_targets", "courses", "course_steps"];
+// Deletes in these collections cascade server-side (and hooks write dates), so reload after.
+const RELOAD_ON_DELETE = ["blocks", "tasks", "categories", "plans", "plan_targets", "courses", "course_steps"];
 
 const STARTER_CATEGORIES = [
   { name: "Fitness", color: "#FF8A65" },
@@ -16,7 +19,7 @@ const STARTER_CATEGORIES = [
 ];
 
 export function DataProvider({ user, children }) {
-  const [state, setState] = useState({ categories: [], blocks: [], tasks: [], completions: [], rewards: [] });
+  const [state, setState] = useState({ categories: [], blocks: [], tasks: [], completions: [], rewards: [], checkins: [], plans: [], plan_targets: [], courses: [], course_steps: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const seeded = useRef(false);
@@ -24,7 +27,12 @@ export function DataProvider({ user, children }) {
   const reload = useCallback(async () => {
     try {
       const lists = await Promise.all(
-        COLLECTIONS.map((c) => pb.collection(c).getFullList({ sort: "created" }))
+        COLLECTIONS.map((c) =>
+          pb.collection(c).getFullList({ sort: "created" })
+            // Phase 2 collections may not exist yet if the frontend deploys before the migration.
+            // Treat them as empty so the rest of the app still loads. Remove once migrated everywhere.
+            .catch((e) => (PHASE2_COLLECTIONS.includes(c) && e?.status === 404 ? [] : Promise.reject(e)))
+        )
       );
       let next = Object.fromEntries(COLLECTIONS.map((c, i) => [c, lists[i]]));
       // New accounts get starter categories (guarded: StrictMode runs this effect twice).
@@ -65,7 +73,7 @@ export function DataProvider({ user, children }) {
     async (collection, id) => {
       await pb.collection(collection).delete(id);
       // Server-side cascades (block -> tasks -> completions) are mirrored by reloading.
-      if (collection === "blocks" || collection === "tasks" || collection === "categories") return reload();
+      if (RELOAD_ON_DELETE.includes(collection)) return reload();
       setState((s) => ({ ...s, [collection]: s[collection].filter((r) => r.id !== id) }));
     },
     [reload]
@@ -82,6 +90,10 @@ export function DataProvider({ user, children }) {
     [state.completions, save, remove]
   );
 
+  const completionIndex = useMemo(() => indexCompletions(state.completions), [state.completions]);
+
+  const schedule = useMemo(() => scheduleIndex(state.courses, state.course_steps), [state.courses, state.course_steps]);
+
   const value = useMemo(() => {
     const categoriesById = Object.fromEntries(state.categories.map((c) => [c.id, c]));
     return {
@@ -91,12 +103,13 @@ export function DataProvider({ user, children }) {
       reload,
       ...state,
       categoriesById,
-      completionIndex: indexCompletions(state.completions),
+      completionIndex,
+      schedule,
       save,
       remove,
       toggleTask,
     };
-  }, [user, loading, error, reload, state, save, remove, toggleTask]);
+  }, [user, loading, error, reload, state, completionIndex, schedule, save, remove, toggleTask]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

@@ -78,6 +78,30 @@ export function weekLabel(iso, today = todayISO()) {
   return `${formatDate(start, opts)} – ${formatDate(addDays(start, 6), opts)}`;
 }
 
+// Months are "YYYY-MM" strings (plans.month).
+export function monthOf(iso) {
+  return iso.slice(0, 7);
+}
+
+// Every date in a "YYYY-MM" month: ["2026-03-01", ..., "2026-03-31"].
+export function monthDates(month) {
+  const [y, m] = month.split("-").map(Number);
+  const days = new Date(y, m, 0).getDate(); // day 0 of the next month = last day of this one
+  return Array.from({ length: days }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
+}
+
+// Step a "YYYY-MM" month: addMonths("2026-12", 1) -> "2027-01".
+export function addMonths(month, delta) {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// "November 2026".
+export function monthLabel(month) {
+  return formatDate(`${month}-01`, { month: "long", year: "numeric" });
+}
+
 export function snap(minutes) {
   return Math.round(minutes / STEP) * STEP;
 }

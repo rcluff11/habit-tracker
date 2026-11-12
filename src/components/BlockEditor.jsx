@@ -3,9 +3,13 @@ import Modal from "./Modal";
 import ColorPicker from "./ColorPicker";
 import { useData } from "../lib/DataContext";
 import { DEFAULT_COLOR } from "../lib/colors";
-import { STEP, formatTime } from "../lib/time";
+import { STEP, formatTime, addDays, parseISODate, todayISO } from "../lib/time";
+import { activeWindow } from "../lib/stats";
+import StepPicker from "./StepPicker";
 import { cleanOffsets, describeOffsets, userOffsets } from "../lib/reminders";
 import OffsetPicker from "./OffsetPicker";
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const TIMES = Array.from({ length: 1440 / STEP + 1 }, (_, i) => i * STEP);
 
@@ -17,17 +21,22 @@ const RECURRENCE = [
 ];
 
 export default function BlockEditor({ block, defaults = {}, onClose }) {
-  const { user, categories, categoriesById, tasks, save, remove } = useData();
+  const { user, categories, categoriesById, tasks, schedule, save, remove } = useData();
   const [form, setForm] = useState(() => ({
     title: block?.title ?? "",
-    date: block?.date ?? defaults.date,
+    date:
+      block?.date ||
+      defaults.date ||
+      (defaults.step && activeWindow({ step: defaults.step }, schedule).start) ||
+      todayISO(),
     start: block?.start ?? defaults.start ?? 540,
     end: block?.end ?? defaults.end ?? (defaults.start ?? 540) + 60,
     category: block?.category ?? "",
     color: block?.color ?? DEFAULT_COLOR,
-    recurrence: block?.recurrence || "none",
+    recurrence: block?.recurrence || defaults.recurrence || "none",
     recurUntil: block?.recurUntil ?? "",
     notes: block?.notes ?? "",
+    step: block?.step ?? defaults.step ?? "",
   }));
   const [track, setTrack] = useState({ on: !block, points: 10 });
   const [error, setError] = useState("");
@@ -40,6 +49,20 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
   const remindBefore = remindMode === "default" ? null : remindMode === "none" ? [] : customOffsets;
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const repeats = form.recurrence !== "none";
+  const stepped = repeats && !!form.step;
+  const stepStart = form.step ? activeWindow({ step: form.step }, schedule).start : "";
+  const anchorDate = form.date || stepStart || todayISO();
+  const weekdayAnchor = stepped && form.recurrence === "weekly";
+  // Any date with the chosen weekday works as the anchor; use the first one on/after the step start.
+  const setWeekday = (wd) => {
+    const start = activeWindow({ step: form.step }, schedule).start;
+    const base = start || anchorDate;
+    const diff = (wd - parseISODate(base).getDay() + 7) % 7;
+    set("date", addDays(base, diff));
+  };
+  const setRecurrence = (recurrence) =>
+    setForm((f) => ({ ...f, recurrence, step: recurrence === "none" ? "" : f.step }));
   const linkedTasks = block ? tasks.filter((t) => t.block === block.id) : [];
   // Only offer a check-off task when the block doesn't already have one.
   const canTrack = linkedTasks.length === 0;
@@ -54,7 +77,7 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
     try {
       const saved = await save(
         "blocks",
-        { ...form, start: Number(form.start), end: Number(form.end), title: form.title.trim(), remindBefore },
+        { ...form, date: anchorDate, step: stepped ? form.step : "", start: Number(form.start), end: Number(form.end), title: form.title.trim(), remindBefore },
         block?.id
       );
       if (track.on && canTrack) {
@@ -117,23 +140,35 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
         </div>
 
         <div className="form-row">
-          <label className="field">
-            <span>{form.recurrence === "none" ? "Date" : "Starts on"}</span>
-            <input className="input" type="date" required value={form.date} onChange={(e) => set("date", e.target.value)} />
-          </label>
+          {weekdayAnchor ? (
+            <label className="field">
+              <span>Day of week</span>
+              <select className="input" value={parseISODate(anchorDate).getDay()} onChange={(e) => setWeekday(Number(e.target.value))}>
+                {WEEKDAYS.map((name, i) => (
+                  <option key={name} value={i}>{name}</option>
+                ))}
+              </select>
+            </label>
+          ) : stepped ? null : (
+            <label className="field">
+              <span>{form.recurrence === "none" ? "Date" : "Starts on"}</span>
+              <input className="input" type="date" required value={form.date} onChange={(e) => set("date", e.target.value)} />
+            </label>
+          )}
           <label className="field">
             <span>Repeat</span>
-            <select className="input" value={form.recurrence} onChange={(e) => set("recurrence", e.target.value)}>
+            <select className="input" value={form.recurrence} onChange={(e) => setRecurrence(e.target.value)}>
               {RECURRENCE.map(([v, label]) => (
                 <option key={v} value={v}>{label}</option>
               ))}
             </select>
           </label>
         </div>
-        {form.recurrence !== "none" && (
+        {repeats && <StepPicker value={form.step} onChange={(v) => set("step", v)} recurUntil={form.recurUntil} />}
+        {repeats && (
           <label className="field">
             <span>Repeat until (optional)</span>
-            <input className="input" type="date" value={form.recurUntil} onChange={(e) => set("recurUntil", e.target.value)} />
+            <input className="input" type="date" min={stepStart || form.date || undefined} value={form.recurUntil} onChange={(e) => set("recurUntil", e.target.value)} />
           </label>
         )}
 
@@ -145,7 +180,7 @@ export default function BlockEditor({ block, defaults = {}, onClose }) {
               ["none", "None"],
               ["custom", "Custom"],
             ].map(([k, label]) => (
-              <button type="button" key={k} className={remindMode === k ? "active" : ""} onClick={() => setRemindMode(k)}>
+              <button type="button" key={k} className={remindMode === k ? "active" : ""} aria-pressed={remindMode === k} onClick={() => setRemindMode(k)}>
                 {label}
               </button>
             ))}

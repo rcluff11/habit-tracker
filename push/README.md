@@ -1,6 +1,7 @@
 # Push reminders
 
-Notch sends notifications before calendar blocks and at tasks' "remind me at" times, even when the app is closed.
+Notch sends notifications before calendar blocks, at tasks' "remind me at" times, and (if turned on) a daily
+affirmation, progress nudges and a day-end score, even when the app is closed.
 
 ```
 Phone/browser ──(Turn on reminders)──► PocketBase  push_subscriptions
@@ -31,9 +32,47 @@ block, e.g. **Gym**: "Starts in 10 min · To do: Squats, Protein shake". Other w
 
 The notification reads **Don't forget: Stretching**, "Worth 5 points. Tap to check it off."
 
+**Daily messages** (Settings → Notifications). All are **off by default**; turning them on is per account,
+and every device with reminders on gets them.
+
+| Message | Field | Default | When | Example |
+|---|---|---|---|---|
+| Affirmation | `users.affirmationAt` (`HH:MM`) | `""` = off | at that time | **Today's affirmation**: one line, the same all day |
+| Progress nudges | `users.nudgeTimes` (minutes since midnight) | `[]` = off | at each time before "day ends at", only on days with tasks | **2 of 5 done**: what's left and the next task |
+| Day-end score | `users.dayEndPush` (bool), at `users.dayEndAt` | `false` (day ends `21:00` if blank) | at day end, only on days with tasks | **Your day**: score headline, then a celebration line on a complete day or a line for tomorrow otherwise |
+
+- Nudges: at most **6** times a day, each on a **15-minute** step (presets Light 6 PM, Regular 12 PM + 6 PM,
+  Frequent 10 AM + 2 PM + 6 PM). The server rejects anything else.
+- Once everything is done, the next nudge time sends one "All done!" celebration instead, and later nudge
+  times that day send nothing.
+- No tasks scheduled that day: no nudge and no day-end push.
+- Progress counts the same tasks Home shows: block tasks, daily habits, and open or due one-offs. A one-off
+  finished on an earlier day doesn't count as open.
+- All three open Home (`/#home`) and replace the previous notification of the same kind (tags
+  `affirmation`, `nudge`, `dayend`).
+
+**Course windows.** Habits and repeating blocks linked to a course step (`tasks.step`, `blocks.step`) only
+run inside their window, from `activeWindow` in [`src/lib/stats.js`](../src/lib/stats.js), the same rule
+the app uses:
+
+- **Start:** the step's week, `course.startDate + (week − 1) × 7`. Nothing is reminded or counted before it.
+- **End:** for a course with `onEnd = stop`, the last day of its highest week,
+  `course.startDate + maxWeek × 7 − 1`. A block's own `recurUntil` ends it sooner if earlier. With
+  `onEnd = keep` there's no end, and the habit or block carries on after the course.
+- Outside the window a stepped item gets no reminder, and isn't counted in nudges or the day-end score, so a
+  day whose only habit is next week's gets no nudge and no day-end push. Tasks on a stepped block follow the
+  block.
+- When a course or step is deleted, PocketBase writes the dates onto its habits and blocks
+  (`date`, and `recurUntil` for `stop` courses), so they keep the same window without the course.
+
 **Timing rules** (all in [`src/lib/reminders.js`](../src/lib/reminders.js), tested by `npm run test:reminders`):
 
-- Each reminder goes out once per device, item, day and offset.
+- Each reminder goes out once per device, item, day and offset; each daily message once per device, kind,
+  day (and nudge time), even across sender restarts (see `push/.sent.json` below).
+- A nudge's "Next:" suggestion is always something still doable: a task on a block that has already
+  ended today is never suggested.
+- Daily messages are due for 15 minutes from their time, never past local midnight (nudges also stop at
+  "day ends at"), and use the device's local date, so the affirmation changes at the user's midnight.
 - If several of a block's reminder times have already passed (e.g. the sender was down), only the closest one is sent.
 - Nothing arrives late: block reminders expire at the block's start ("Starting now" gets one minute), task
   reminders 15 minutes after their time. The push `TTL` is set so the push service drops them after that too.
@@ -96,6 +135,19 @@ journalctl -u notch-push -f     # watch the logs
 
 To update later: `git pull && npm ci --omit=dev && sudo systemctl restart notch-push`.
 
+**Always restart the sender after deploying.** It loads `src/lib` once at start, so new message kinds
+or timing rules only take effect after `sudo systemctl restart notch-push`. For the daily messages and
+course windows, deploy the new `pb_migrations` and `pb_hooks` and restart PocketBase first (the `users`
+fields and the `checkins`, `courses` and `course_steps` collections must exist), then restart the sender.
+If those collections are missing, the sender logs a warning once and carries on without check-ins or course windows (block and task reminders still go out); restart it after PocketBase has applied the migrations.
+
+Each tick makes eight queries, however many users and devices there are: subscriptions, then users, blocks,
+tasks, completions, check-ins, courses and course steps in parallel. Completions are the last two days plus
+every completion of a one-off task (`task.daily = false && task.block = ''`); check-ins are the last two
+days; courses and steps are all of them (only `id, user, startDate, onEnd` and `id, user, course, week`),
+because a course's end comes from its highest week. Each user's completion index and course schedule
+(`scheduleIndex`) are built once per tick and shared by all their devices.
+
 ## Local development
 
 `push/.env` and `.env.local` (both git-ignored) hold local keys. With PocketBase running:
@@ -118,6 +170,11 @@ Push works on `http://localhost`, but on a phone it needs the real HTTPS site.
 
 ## Known limitations
 
-- If the sender restarts shortly before a block or task reminder, that reminder may be sent again. It
-  replaces the earlier notification (same tag) rather than stacking a second one.
+- What was sent is saved to `push/.sent.json` (or the path in `SENT_LOG`) after each tick that sends
+  something, and loaded at start, so a restart doesn't resend a reminder or daily message. The service
+  user must be able to write to `push/`. If the file can't be written, the sender logs a warning and
+  keeps running; then a restart within a message's 15-minute window can resend it (same tag, so it
+  replaces the earlier notification rather than stacking). If the sender crashes between sending and
+  saving, that tick's messages may also go out again.
 - A block starting in the hour skipped when clocks spring forward (e.g. 2:30am) gets no reminder that night.
+- On the spring-forward day, affirmations and nudges set between 02:00 and 02:59 local time don't fire.

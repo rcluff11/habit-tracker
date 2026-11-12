@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Modal from "./Modal";
+import StepPicker from "./StepPicker";
 import { useData } from "../lib/DataContext";
+import { EFFORT_LEVELS, activeWindow, levelLabel } from "../lib/stats";
 import { formatRange, todayISO } from "../lib/time";
 
 const POINT_PRESETS = [5, 10, 25, 50];
+// Same text as the server's rejection in pocketbase/pb_hooks (M-2b).
+const EARLY_HISTORY = "This habit has check-offs before that course week starts. Create a new habit for the course instead, so its history stays.";
 
 function kindOf(task) {
   if (task.block) return "block";
@@ -12,15 +16,18 @@ function kindOf(task) {
 }
 
 export default function TaskEditor({ task, defaults = {}, onClose }) {
-  const { categories, blocks, save, remove } = useData();
+  const { categories, blocks, completionIndex, schedule, plan_targets: planTargets = [], save, remove } = useData();
   const [form, setForm] = useState(() => ({
     title: task?.title ?? "",
     category: task?.category ?? defaults.category ?? categories[0]?.id ?? "",
     points: task?.points ?? 10,
-    kind: task ? kindOf(task) : defaults.block ? "block" : "once",
+    kind: task ? kindOf(task) : defaults.block ? "block" : defaults.step ? "daily" : "once",
     block: task?.block ?? defaults.block ?? "",
     date: task?.date ?? defaults.date ?? "",
+    recurUntil: task?.recurUntil ?? "",
+    step: task?.step ?? defaults.step ?? "",
     priority: task?.priority ?? false,
+    effort: EFFORT_LEVELS.includes(task?.effort) ? task.effort : "",
     remindAt: task?.remindAt ?? "",
     remindDate: task?.remindDate ?? "",
   }));
@@ -29,11 +36,23 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   // One-off tasks without a due date need a day to be reminded on.
   const needsRemindDate = form.kind === "once" && !form.date;
+  const stepped = form.kind === "daily" && !!form.step;
   const reminderBlock = blocks.find((b) => b.id === form.block);
+
+  // Moving an existing habit onto a course week that starts after some of its check-offs would
+  // hide that history, so the server refuses it. Warn here first and block Save.
+  const earlyHistory = useMemo(() => {
+    if (!task || !stepped || form.step === (task.step || "")) return false;
+    // Same start the habit would get once linked: max(step start, created - 1 day), as on the server.
+    const start = activeWindow({ step: form.step, created: task.created }, schedule).start;
+    if (!start) return false;
+    return (completionIndex.byTask.get(task.id) || []).some((c) => String(c.date).slice(0, 10) < start);
+  }, [task, stepped, form.step, schedule, completionIndex]);
 
   const submit = async (e) => {
     e.preventDefault();
     if (form.kind === "block" && !form.block) return setError("Pick a calendar block.");
+    if (earlyHistory) return;
     try {
       await save(
         "tasks",
@@ -42,9 +61,12 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
           category: form.category,
           points: Number(form.points) || 0,
           priority: form.priority,
+          effort: form.effort,
           block: form.kind === "block" ? form.block : "",
           daily: form.kind === "daily",
-          date: form.kind === "block" ? "" : form.kind === "daily" ? form.date || todayISO() : form.date,
+          step: stepped ? form.step : "",
+          recurUntil: form.kind === "daily" && !stepped ? form.recurUntil : "",
+          date: form.kind === "block" || stepped ? "" : form.kind === "daily" ? form.date || (task ? "" : todayISO()) : form.date,
           remindAt: form.kind === "block" ? "" : form.remindAt,
           remindDate: needsRemindDate && form.remindAt ? form.remindDate || todayISO() : "",
         },
@@ -57,8 +79,17 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
   };
 
   const del = async () => {
-    await remove("tasks", task.id);
-    onClose();
+    const targets = planTargets.filter((t) => t.kind === "completions" && t.task === task.id).length;
+    const msg = targets
+      ? `Delete “${task.title}”? ${targets === 1 ? "1 monthly target that counts" : `${targets} monthly targets that count`} its check-offs will be deleted too.`
+      : `Delete “${task.title}”?`;
+    if (!window.confirm(msg)) return;
+    try {
+      await remove("tasks", task.id);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -77,14 +108,31 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
         </label>
 
         <div className="field">
-          <span>Type</span>
-          <div className="seg" role="group">
+          <span id="effort-label">Effort (optional)</span>
+          <div className="seg effort-seg" role="group" aria-labelledby="effort-label">
+            {[["", "None"], ...EFFORT_LEVELS.map((l) => [l, levelLabel(l)])].map(([k, label]) => (
+              <button
+                type="button"
+                key={k || "none"}
+                className={form.effort === k ? "active" : ""}
+                aria-pressed={form.effort === k}
+                onClick={() => set("effort", k)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <span id="type-label">Type</span>
+          <div className="seg" role="group" aria-labelledby="type-label">
             {[
               ["once", "To-do"],
               ["daily", "Daily habit"],
               ["block", "On calendar"],
             ].map(([k, label]) => (
-              <button type="button" key={k} className={form.kind === k ? "active" : ""} onClick={() => set("kind", k)}>
+              <button type="button" key={k} className={form.kind === k ? "active" : ""} aria-pressed={form.kind === k} onClick={() => set("kind", k)}>
                 {label}
               </button>
             ))}
@@ -105,10 +153,32 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
             </select>
           </label>
         ) : (
-          <label className="field">
-            <span>{form.kind === "daily" ? "Starting" : "Due date (optional)"}</span>
-            <input className="input" type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
-          </label>
+          <>
+            {form.kind === "daily" && <StepPicker value={form.step} onChange={(v) => set("step", v)} />}
+            {earlyHistory && (
+              <p className="error" role="alert" id="early-history">{EARLY_HISTORY}</p>
+            )}
+            {!stepped && (
+              <div className="form-row">
+                <label className="field">
+                  <span>{form.kind === "daily" ? "Starting" : "Due date (optional)"}</span>
+                  <input className="input" type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
+                </label>
+                {form.kind === "daily" && (
+                  <label className="field">
+                    <span>Ends (optional)</span>
+                    <input
+                      className="input"
+                      type="date"
+                      min={form.date || undefined}
+                      value={form.recurUntil}
+                      onChange={(e) => set("recurUntil", e.target.value)}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {form.kind === "block" ? (
@@ -195,7 +265,9 @@ export default function TaskEditor({ task, defaults = {}, onClose }) {
           ) : (
             <span />
           )}
-          <button className="btn btn-primary">{task ? "Save" : "Add task"}</button>
+          <button className="btn btn-primary" disabled={earlyHistory} aria-describedby={earlyHistory ? "early-history" : undefined}>
+            {task ? "Save" : "Add task"}
+          </button>
         </div>
       </form>
     </Modal>

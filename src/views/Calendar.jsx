@@ -76,7 +76,7 @@ function DayColumn({ date, isToday, onCreate, onEdit }) {
       onPointerUp={onPointerUp}
       onPointerCancel={() => setDrag(null)}
     >
-      {layout(blocksForDate(data.blocks, date)).map(({ block, lane, lanes }) => {
+      {layout(blocksForDate(data.blocks, date, data.schedule)).map(({ block, lane, lanes }) => {
         const linked = tasks.filter((t) => t.block === block.id);
         const allDone = linked.length > 0 && linked.every((t) => completionIndex.byKey.has(`${t.id}|${date}`));
         const short = block.end - block.start <= 30;
@@ -163,7 +163,7 @@ export default function Calendar() {
       <div className="row-wrap">
         <div className="seg">
           {["day", "week"].map((m) => (
-            <button key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>
+            <button key={m} className={mode === m ? "active" : ""} aria-pressed={mode === m} onClick={() => setMode(m)}>
               {m === "day" ? "Day" : "Week"}
             </button>
           ))}

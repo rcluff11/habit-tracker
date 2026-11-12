@@ -1,0 +1,13 @@
+.month-plan { display: flex; flex-direction: column; gap: 16px; }
+.month-form { display: flex; flex-direction: column; gap: 12px; }
+.month-notes { resize: vertical; min-height: 6rem; font: inherit; }
+.month-actions { justify-content: flex-end; }
+.target-list { display: flex; flex-direction: column; gap: 16px; }
+.target-row { display: flex; flex-direction: column; gap: 6px; }
+.target-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.target-chip { margin-left: 8px; }
+.target-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.target-meta .claimed { color: var(--good); font-weight: 600; }
+@media (max-width: 360px) {
+  .targets-card .card-head { flex-direction: column; align-items: flex-start; }
+}
