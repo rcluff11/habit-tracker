@@ -102,6 +102,23 @@ push/           reminder sender (runs on the server) + setup guide
 scripts/        API and reminder tests
 ```
 
+## How changes are made
+
+The process is in [`AGENTS.md`](AGENTS.md). Each change has a task file in `tasks/`. A typical pull request goes:
+
+1. Open or update the task in `tasks/T-NNN.md` and branch from `main`.
+2. Plan the change.
+3. Nine specialist agents review the plan in 3 rounds (analysis, implementation, verification).
+4. The plan goes to the owner (rcluff11), and the owner approves it. The approval is recorded in the task's activity log ([`tasks/README.md`](tasks/README.md#plan-approval)).
+5. Build, review the build, run the tests and the regression-safety check against [`docs/contracts.md`](docs/contracts.md).
+6. Commit with the task ID, push, and open a pull request.
+
+Hard gates (the full list is in `AGENTS.md` § 8) include:
+
+- No code without a reviewed plan that the owner/DRI has approved (§ 7 step 4b).
+- No commit without passing automated tests.
+- No `/docs` change without all 9 agents agreeing.
+
 ## Roadmap (phase 2)
 
 - Progress nudges and daily affirmation notifications (with adjustable frequency)
