@@ -111,10 +111,22 @@ Run `test:api` after any change to migrations or hooks. Run `test:reminders` aft
 
 ## Working with the agents
 
-- **Design agent:** owns `plan.md`. Keep it in step with the roadmap below.
-- **Frontend agent:** works in `src/` and `public/`. Reuse the classes and CSS variables in `src/styles.css`. Add only view-specific CSS. Ask before adding dependencies.
-- **Backend agent:** works in `pocketbase/` and `push/`. It must follow the schema-change rules above.
-- **Reviewer:** reports findings only and never edits. Checks changes against the principles, the ownership rules, mobile layout, and dark mode. Runs the tests.
+The process lives in `AGENTS.md`: 9 specialists, a 3-round review, the 7 lenses, and the hard gates. Each agent in `.claude/agents/` preloads its Notch checklist from `.claude/skills/notch-*`.
+
+| Agent | Notch skill | Owns here |
+|---|---|---|
+| analyst | `notch-analyst` | scope, acceptance criteria, `tasks/`, `plan.md` |
+| architect | `notch-architect` | security, trust boundaries (browser ↔ PocketBase ↔ sender ↔ push services) |
+| data-engineer | `notch-data-engineer` | `pb_migrations`, schema invariants |
+| backend-engineer | `notch-backend` | `pb_hooks`, `push/` |
+| frontend-engineer | `notch-frontend` | `src/`, `public/` |
+| ux-designer | `notch-ux` | mobile, dark mode, accessibility, push copy |
+| sdet | `notch-sdet` | test suites and coverage |
+| devops | `notch-devops` | CI, deploy order, VM, Netlify |
+| review-coordinator | `notch-review-coordinator` | runs the cycle, writes `docs/reviews/` |
+
+- `/review` runs the review cycle and `/build` runs the § 7 flow. Both are in `.claude/skills/`.
+- I (rcluff11) am the DRI and approve every plan before any code is written.
 - When I ask to *learn* something, explain it and give hints instead of writing the full implementation.
 
 ## Status
@@ -134,3 +146,11 @@ Run `test:api` after any change to migrations or hooks. Run `test:reminders` aft
 - Read only the files your task names, plus files they import if needed.
 - Find functions with Grep, then read just those lines, not the whole file.
 - Never read node_modules, dist, package-lock.json, or pocketbase/pb_data.
+
+- `/docs` is the exception: read all of it at session start (`AGENTS.md` § 0). Ignore `.starter/` and `agentic-mastery/`, which hold the starter's own history and source.
+
+## Session start (every session)
+
+1. Read `AGENTS.md` in full and follow its Session Start Procedure. This is a **single repo**.
+2. Read every file in `/docs`, then `tasks/INDEX.md`.
+3. Then handle the request, applying the agent team, review cycle and hard gates from `AGENTS.md`. If `AGENTS.md` doesn't cover something, ask me. Don't guess.

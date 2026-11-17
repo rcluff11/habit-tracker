@@ -10,3 +10,7 @@ pocketbase/LICENSE.md
 .netlify/
 push/.sent.json
 push/.sent.json.tmp
+
+# Vendored agentic-mastery starter source (its own git repo; synced by hand)
+agentic-mastery/
+.claude/settings.local.json

@@ -1,0 +1,57 @@
+# CODEOWNERS — required reviewers per area
+#
+# Syntax: <path-pattern>  @user-or-team  [@another-user]
+# More-specific patterns override less-specific ones (last match wins per GitHub).
+# Keep this file in sync with /docs/ownership.md.
+#
+# IMPORTANT: every entry below uses [insert ...] placeholders. Replace with real
+# GitHub handles / teams before this file does anything useful.
+
+# Repo-wide default — at least one human approver required on every PR
+*                               @rcluff11
+
+# Project conventions and process
+/AGENTS.md                      @rcluff11
+/CLAUDE.md                      @rcluff11
+/.claude/                       @rcluff11
+/.github/                       @rcluff11
+
+# Gate files (starter T-014). A PR build runs the PR's own pipeline YAML, so these files
+# define the check the PR is judged by: changing them needs the people who own the
+# gates. Every line names both owners (last match wins, so no line may drop one).
+# `*` above already requires a default reviewer; this routes gate changes further.
+/azure-pipelines.yml            @rcluff11
+/scripts/ci-*.sh                @rcluff11
+/scripts/requirements-deck.*    @rcluff11
+/.githooks/                     @rcluff11
+/.placeholder-allow             @rcluff11
+/.gitattributes                 @rcluff11
+/.github/CODEOWNERS             @rcluff11
+
+# The upstream starter's own history (starter T-015): its ADRs and reviews sit outside the
+# mechanical /docs consensus gate, so route them to the people who'd own that gate.
+/.starter/                      @rcluff11
+
+# Tasks ledger — DRI sets stay loose, but require any DRI to approve
+/tasks/                         @rcluff11
+
+# Living docs — unanimous-consensus rule applies; CODEOWNERS adds a human review gate on top
+/docs/                          @rcluff11
+/docs/architecture.md           @rcluff11
+/docs/stack.md                  @rcluff11
+/docs/data-model.md             @rcluff11
+/docs/api.md                    @rcluff11
+/docs/ux.md                     @rcluff11
+/docs/testing.md                @rcluff11
+/docs/deployment.md             @rcluff11
+/docs/runbooks/                 @rcluff11
+/docs/decisions/                @rcluff11
+/docs/ownership.md              @rcluff11
+/docs/onboarding.md             @rcluff11
+
+# Code areas (examples — replace with the real layout of your repo)
+# /apps/api/                    @[insert backend-team here]
+# /apps/web/                    @[insert frontend-team here]
+# /packages/db/                 @[insert data-team here]
+# /infra/                       @[insert devops-team here]
+# /.github/workflows/           @[insert devops-team here]

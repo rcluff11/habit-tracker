@@ -1,0 +1,10 @@
+# Line endings. The git hooks and CI scripts read these files line by line in
+# POSIX sh; a CRLF checkout (core.autocrlf=true on Windows) leaves a trailing \r
+# on every line, so the .placeholder-allow globs never match (T-003, OPS-13).
+* text=auto
+*.sh text eol=lf
+.githooks/* text eol=lf
+.placeholder-allow text eol=lf
+.github/workflows/*.yml text eol=lf
+.github/CODEOWNERS text eol=lf
+.github/pull_request_template.md text eol=lf
